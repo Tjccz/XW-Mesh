@@ -1,0 +1,44 @@
+# =====================================================================
+#  湘网组网 · 控制台  —— Dockge / docker compose 可直接使用
+#
+#  适用：iStoreOS / OpenWrt 软路由、NAS、宝塔面板等已装 Docker 的环境
+#
+#  前置：镜像需先构建（预构建前端，很快）
+#      docker build -f deploy/dockge/Dockerfile.slim -t xiangwang-mesh-console:1.1.0 .
+#
+#  变量请在同级 .env 中设置（Dockge 有 .env 编辑入口），见 .env.example
+# =====================================================================
+
+services:
+  console:
+    image: xiangwang-mesh-console:${XW_VERSION:-1.1.0}
+    container_name: xiangwang-console
+    restart: unless-stopped
+    ports:
+      # 左侧为宿主机端口。192.168.88.5 的 8080 已确认空闲
+      - "${HOST_PORT:-8080}:8080"
+    environment:
+      PORT: 8080
+      DATA_DIR: /data
+      TZ: ${TZ:-Asia/Shanghai}
+      XW_VERSION: ${XW_VERSION:-1.1.0}
+      ET_VERSION: ${ET_VERSION:-2.6.4}
+      # 关键：节点接入脚本靠它回连，必须写成其他设备能访问到的地址
+      CONSOLE_URL: ${CONSOLE_URL:-http://192.168.88.5:8080}
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      # 不设默认值，强制你在 .env 里填，避免用弱口令上线
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请先在 .env 中设置 ADMIN_PASSWORD}
+    volumes:
+      # 数据库、配置快照全部落在这里，备份只需拷这一个目录
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

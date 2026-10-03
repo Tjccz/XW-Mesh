@@ -1,0 +1,77 @@
+# =====================================================================
+#  湘网组网 · 控制台 + 本机节点（让这台软路由自己也加入组网）
+#
+#  这是 compose.yaml 的「完整版」，在你已经登录控制台、
+#  创建好网络与接入密钥之后再换成这个文件重新部署。
+#
+#  与 compose.yaml 的差别：多了一个 node 服务，把本机作为组网节点接入。
+#
+#  额外前置：节点镜像也要构建
+#      docker build -f docker/Dockerfile.node -t xiangwang-mesh-node:1.1.0 .
+#
+#  已在 .env 中设置 ACCESS_KEY（控制台「设备接入密钥」里新建后复制）
+# =====================================================================
+
+services:
+  console:
+    image: xiangwang-mesh-console:${XW_VERSION:-1.1.0}
+    container_name: xiangwang-console
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    environment:
+      PORT: 8080
+      DATA_DIR: /data
+      TZ: ${TZ:-Asia/Shanghai}
+      XW_VERSION: ${XW_VERSION:-1.1.0}
+      ET_VERSION: ${ET_VERSION:-2.6.4}
+      CONSOLE_URL: ${CONSOLE_URL:-http://192.168.88.5:8080}
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请先在 .env 中设置 ADMIN_PASSWORD}
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --------------------------- 本机作为节点 ---------------------------
+  # 容器内是独立的 Debian 用户空间，不受路由器 OpenWrt / opkg 的限制
+  node:
+    image: xiangwang-mesh-node:${XW_VERSION:-1.1.0}
+    container_name: xiangwang-node
+    restart: unless-stopped
+    depends_on:
+      console:
+        condition: service_healthy
+    environment:
+      # 同一 compose 项目内可直接用服务名回连控制台
+      CONSOLE_URL: http://console:8080
+      ACCESS_KEY: ${ACCESS_KEY:?请先在控制台创建接入密钥，并填入 .env}
+      RPC_PORT: 15888
+      ET_VERSION: ${ET_VERSION:-2.6.4}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      # 令牌与已下载的核心落盘，重启不会重复占用设备名额
+      - ./node-state:/var/lib/xiangwang
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      # 必需：容器内要创建 TUN 网卡。若报错请先在路由器上装 kmod-tun
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      # 子网代理场景需要
+      net.ipv4.ip_forward: 1
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

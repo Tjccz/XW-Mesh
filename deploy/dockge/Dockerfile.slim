@@ -1,0 +1,49 @@
+# =====================================================================
+#  湘网组网 · 控制台镜像（精简构建版，适合软路由 / NAS 等小机器）
+#
+#  与根目录 Dockerfile 的区别：
+#    根目录版   阶段一在镜像内跑 `npm ci` + `vite build` 来构建前端，
+#               需要下载约 200MB 前端依赖，Vite/esbuild 峰值内存可达数百 MB，
+#               在 1GB 内存的软路由上有 OOM 风险。
+#    本文件     直接复用已构建好的 web/dist，镜像内只装后端运行依赖
+#               （express + cors，两个纯 JS 包，几 MB），构建快且几乎不吃内存。
+#
+#  前置条件：web/dist 必须已存在。仓库里 web/dist 被 .gitignore 排除，
+#            所以要么先执行一次前端构建，要么直接使用发行包
+#            （发行包已内置 web/dist）：
+#                cd web && npm ci && npm run build
+#
+#  构建示例：
+#      docker build -f deploy/dockge/Dockerfile.slim -t xiangwang-mesh-console:1.1.0 .
+# =====================================================================
+
+FROM node:22-alpine
+
+# curl 供健康检查使用；tzdata 保证日志与审计时间正确
+RUN apk add --no-cache curl tzdata \
+ && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
+ && echo "Asia/Shanghai" > /etc/timezone
+
+WORKDIR /app
+ENV NODE_ENV=production \
+    DATA_DIR=/data \
+    PORT=8080 \
+    TZ=Asia/Shanghai \
+    XW_VERSION=1.1.0
+
+# 后端运行依赖（仅 express + cors）
+COPY server/package*.json ./server/
+RUN cd server && (npm ci --omit=dev --registry=https://registry.npmmirror.com \
+                  || npm install --omit=dev --registry=https://registry.npmmirror.com)
+
+# 后端源码 + 预构建好的前端产物
+COPY server/ ./server/
+COPY web/dist ./web/dist
+
+VOLUME ["/data"]
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:8080/api/health || exit 1
+
+CMD ["node", "--experimental-sqlite", "server/src/index.js"]
