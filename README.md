@@ -228,6 +228,7 @@ xiangwang-mesh/
 │   │   │   ├── alerts.js           告警对账扫描引擎
 │   │   │   ├── notify.js           四类渠道投递与配置校验/脱敏
 │   │   │   ├── smtp.js             极简 SMTP 客户端（零依赖）
+│   │   │   ├── download.js         图形客户端安装包地址解析（纯逻辑，可离线自检）
 │   │   │   └── audit.js            审计写入
 │   │   └── templates/node-install.sh  节点接入脚本模板（双模式）
 ├── web/                            控制台前端（Vue 3 + Vite）
@@ -247,10 +248,11 @@ xiangwang-mesh/
 │   └── agent-entrypoint.sh         节点容器入口（心跳 + 配置同步）
 ├── scripts/
 │   ├── deploy.sh                   服务器一键部署
-│   ├── smoke-test.mjs              接口自检（218 项）
+│   ├── smoke-test.mjs              接口自检（227 项）
 │   ├── test-smtp.mjs               SMTP 客户端自测（31 项，含真实 TLS 握手）
 │   ├── check-dockerignore.py       .dockerignore 规则自检（无需 Docker）
 │   ├── check-ci.py                 CI 与部署配置一致性自检（版本号/镜像名）
+│   ├── check-download-links.mjs    图形客户端下载链接自检（比对官方 release 资产名）
 │   ├── seed-demo.mjs               幂等演示数据
 │   └── screenshots.mjs             Playwright 批量截图
 ├── docs/
@@ -277,11 +279,14 @@ xiangwang-mesh/
 ### 自检
 
 ```bash
-# 后端接口全链路自检（需服务已在 8080 运行，218 项）
+# 后端接口全链路自检（需服务已在 8080 运行，227 项）
 node scripts/smoke-test.mjs
 
 # SMTP 客户端自测（现场起模拟服务器，含隐式 TLS 与 STARTTLS 升级，31 项）
 node scripts/test-smtp.mjs
+
+# 图形客户端下载链接自检（在线比对 EasyTier 官方 release 资产名，可加 --offline 只跑逻辑）
+node scripts/check-download-links.mjs
 
 # .dockerignore 规则自检（移植 moby/patternmatcher 语义，本机没有 Docker 也能跑）
 python scripts/check-dockerignore.py .

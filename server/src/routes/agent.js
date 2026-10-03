@@ -2,7 +2,8 @@ import express from 'express'
 import crypto from 'node:crypto'
 import { db, now, orNull } from '../db.js'
 import { buildNodeConfigToml, subnetProxyOf, snapshotNode } from '../services/config.js'
-import { buildInstallScript, allocateVirtualIp, DEFAULT_RPC_PORT } from '../services/provision.js'
+import { buildInstallScript, allocateVirtualIp, DEFAULT_RPC_PORT, DEFAULT_ET_VERSION } from '../services/provision.js'
+import { resolveDownloadUrl } from '../services/download.js'
 import { logAudit, clientIp } from '../services/audit.js'
 import { checkQuota } from '../services/quota.js'
 
@@ -66,6 +67,30 @@ router.get('/install.sh', (req, res) => {
   }
 
   return res.status(400).type('text/plain; charset=utf-8').send('error=缺少 token 或 key 参数\n')
+})
+
+/* ------------------------- 图形客户端下载跳转 ------------------------- */
+
+/**
+ * Windows / macOS 这类平台没法用 shell 脚本一键接入，只能引导用户去装
+ * EasyTier 官方图形客户端。这个路由把「去哪个版本、下哪个文件」收敛到
+ * 服务端一处 —— 将来换版本或换镜像源，只改 services/download.js。
+ *
+ *   /api/agent/redirect/download                  按访问者系统自动匹配
+ *   /api/agent/redirect/download?os=windows
+ *   /api/agent/redirect/download?os=macos&arch=aarch64
+ *   /api/agent/redirect/download?os=page          只看发布页
+ *
+ * 定位是**跳转**不是代理：文件始终从 GitHub 官方下载，本项目不分发安装包。
+ */
+router.get('/redirect/download', (req, res) => {
+  const url = resolveDownloadUrl({
+    os: req.query.os,
+    arch: req.query.arch,
+    ua: String(req.get('user-agent') || ''),
+    version: DEFAULT_ET_VERSION,
+  })
+  res.redirect(302, url)
 })
 
 /* ------------------------------ 节点注册 ------------------------------ */

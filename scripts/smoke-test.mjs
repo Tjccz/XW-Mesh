@@ -41,6 +41,8 @@ async function api(method, path, body, opts = {}) {
     method,
     headers,
     body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
+    // 默认 follow：跳转类断言需要看到 302 本身，所以要能传 manual
+    redirect: opts.redirect,
   })
   const type = res.headers.get('content-type') || ''
   const payload = type.includes('application/json') ? await res.json().catch(() => null) : await res.text()
@@ -250,6 +252,13 @@ async function run() {
     expect('脚本内置初始配置', (data?.script || '').includes('network_identity'))
     expect('返回四种平台接入方式', ['linux', 'docker', 'openwrt', 'windows'].every((k) => data?.methods?.[k]))
     expect('Linux 命令使用 token 参数', (data?.methods?.linux?.command || '').includes(`token=${nodeToken}`))
+    // 纯文本里的 URL 点不动，前端要有可渲染成按钮的外链
+    const winLinks = data?.methods?.windows?.links || []
+    expect(
+      'Windows 接入方式带可点击外链',
+      winLinks.length >= 1 && winLinks.every((l) => /^https?:\/\//.test(l.url)),
+      winLinks.map((l) => l.url).join(' ')
+    )
   }
 
   {
@@ -357,6 +366,56 @@ async function run() {
     expect('Linux 命令使用 key 参数', (data?.methods?.linux?.command || '').includes(`key=${keyValue}`))
     expect('Docker 命令包含 NET_ADMIN', (data?.methods?.docker?.command || '').includes('NET_ADMIN'))
     expect('成员上限内可继续添加', s2 === 201 || s2 === 403)
+
+    const winLinks = data?.methods?.windows?.links || []
+    expect(
+      'Windows 接入方式带可点击外链',
+      winLinks.length >= 1 && winLinks.every((l) => /^https?:\/\//.test(l.url)),
+      winLinks.map((l) => l.url).join(' ')
+    )
+    // 复制/另存为拿走的是 command 文本，所以文本里也必须带可用地址
+    expect(
+      '接入方式文本里也是可用下载地址',
+      (data?.methods?.windows?.command || '').includes('/api/agent/redirect/download'),
+      (data?.methods?.windows?.command || '').split('\n').pop()
+    )
+  }
+
+  // 回归：接入密钥弹窗的「下载客户端」曾指向一个从未实现的路由 —— 用户点开
+  // 只得到 {"error":"接口不存在"}（被 /api 兜底 404 接住）。这里断言该路由
+  // 不但存在，还能按访问者系统给出官方安装包直链。
+  {
+    const probe = (path, ua) =>
+      api('GET', path, undefined, {
+        auth: false,
+        redirect: 'manual',
+        headers: { 'User-Agent': ua },
+      })
+
+    const win = await probe('/api/agent/redirect/download', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120')
+    expect('图形客户端下载跳转存在（非 404）', win.status === 302, `HTTP ${win.status}`)
+    const winLoc = win.headers.get('location') || ''
+    expect(
+      'Windows 访问者被指向官方 .exe 直链',
+      winLoc.startsWith('https://github.com/EasyTier/EasyTier/releases/download/') && winLoc.endsWith('_x64-setup.exe'),
+      winLoc
+    )
+
+    const mac = await probe('/api/agent/redirect/download', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605')
+    expect('macOS 访问者被指向官方 .dmg 直链', (mac.headers.get('location') || '').endsWith('.dmg'), mac.headers.get('location') || '')
+
+    const over = await probe('/api/agent/redirect/download?os=macos&arch=aarch64', 'Mozilla/5.0 (Windows NT 10.0)')
+    expect('os/arch 参数可覆盖 UA 判断', (over.headers.get('location') || '').includes('_aarch64.dmg'), over.headers.get('location') || '')
+
+    const page = await probe('/api/agent/redirect/download?os=plan9', 'curl/8.4.0')
+    expect(
+      '未知平台回退到发布页（宁可不给，也不甩错文件）',
+      (page.headers.get('location') || '').includes('/releases/tag/v'),
+      page.headers.get('location') || ''
+    )
+
+    const bare = await probe('/api/agent/redirect/download', 'curl/8.4.0')
+    expect('无 UA 的裸请求也不报错，回退发布页', bare.status === 302, `HTTP ${bare.status}`)
   }
 
   {

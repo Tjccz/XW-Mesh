@@ -182,6 +182,7 @@ docker build -f deploy/dockge/Dockerfile.slim -t xiangwang-mesh-console:1.1.0 .
 | 6088 被占用 | 改 `.env` 里的 `HOST_PORT`（如 16088）后重新部署 |
 | 节点容器反复重启，日志报 TUN 错误 | 宿主机缺 `/dev/net/tun`，装 `kmod-tun` 后重启 |
 | 控制台能开但节点回连失败 | 检查 `CONSOLE_URL` 是否被显式设成了**设备访问不到**的地址；不确定就留空 |
+| Windows / macOS 电脑怎么接入 | 本项目目前没有 Windows 客户端。去「接入密钥 → 接入方式 → Windows / macOS」照着填 EasyTier 官方 GUI 的参数即可互通；这样接入的设备**不会出现在「设备管理」**，也不受控制台停止 / 限速。要受管控就装 WSL 或 Docker 走 Linux 方式 |
 | 忘记管理员密码 | 优先在库内改密；删 `data/` 重建会**丢数据** |
 | 界面是旧版本 | Actions 里前端是从源码重建的；若你本地改了前端，记得重新 `npm run build` 并提交 `web/dist` |
 

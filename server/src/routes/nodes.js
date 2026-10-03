@@ -98,16 +98,23 @@ function provisionMethods(req, node, network) {
       ].join('\n'),
     },
     windows: {
-      title: 'Windows / macOS 图形客户端',
-      desc: '使用官方 GUI，新建网络后填入以下参数',
+      title: 'Windows / macOS（官方客户端）',
+      desc:
+        '本项目暂无 Windows 客户端 —— 下面不是安装脚本，是给 EasyTier 官方图形客户端填的参数。' +
+        '这样接入的设备能互通，但不会出现在「设备管理」里，也不受控制台停止 / 限速 / 配置下发。',
       command: [
         `网络名称：${network.name}`,
         `网络密钥：${network.secret}`,
         `对等节点：${peers}`,
         `虚拟 IP ：${node.virtual_ip}`,
         ``,
-        `客户端下载：https://github.com/EasyTier/EasyTier/releases`,
+        `客户端下载：${base}/api/agent/redirect/download`,
+        `全部版本：  ${base}/api/agent/redirect/download?os=page`,
       ].join('\n'),
+      links: [
+        { label: '下载客户端（自动匹配系统）', url: `${base}/api/agent/redirect/download` },
+        { label: '全部版本', url: `${base}/api/agent/redirect/download?os=page` },
+      ],
     },
   }
 }

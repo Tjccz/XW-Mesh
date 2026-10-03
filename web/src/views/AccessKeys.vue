@@ -314,7 +314,25 @@ onMounted(async () => {
             <div class="xw-method-desc">{{ m.desc }}</div>
             <pre class="xw-script-sm">{{ m.command }}</pre>
             <div class="method-foot">
-              <el-button type="primary" size="small" @click="copyCmd(m.command)">
+              <!-- 有外链的平台（如 Windows 官方客户端）把外链做成主按钮，
+                   纯文本里的 URL 无法点击，用户只能手抄 -->
+              <el-button
+                v-for="l in m.links || []"
+                :key="l.url"
+                type="primary"
+                size="small"
+                tag="a"
+                :href="l.url"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <el-icon style="margin-right: 4px"><Download /></el-icon>{{ l.label }}
+              </el-button>
+              <el-button
+                :type="(m.links || []).length ? 'default' : 'primary'"
+                size="small"
+                @click="copyCmd(m.command)"
+              >
                 <el-icon style="margin-right: 4px"><DocumentCopy /></el-icon>复制命令
               </el-button>
               <el-button

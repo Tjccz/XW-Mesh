@@ -638,6 +638,7 @@ function ensureColumn(table, column, definition) {
 | GET/POST | `/register` | 用接入密钥换取节点令牌与虚拟 IP |
 | POST | `/heartbeat` | 上报状态与流量；吊销时返回 `revoked:true` |
 | GET | `/config` | 返回 `config.toml` 纯文本；吊销/停止返回 403 |
+| GET | `/redirect/download` | 按 `User-Agent` 跳转到 EasyTier 官方 GUI 安装包；`?os=` / `?arch=` 可覆盖，认不出则回退发布页 |
 | POST | `/report` | 诊断信息上报（预留） |
 
 ### 6.3 节点侧协议约定
