@@ -1,0 +1,19 @@
+services:
+  console:
+    build: .
+    image: xiangwang-mesh-console:0.1.0
+    container_name: xiangwang-console
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - DATA_DIR=/data
+      # 部署在反向代理后面时，填写控制台的对外访问地址
+      # 节点接入脚本会使用这个地址回连控制台
+      - CONSOLE_URL=${CONSOLE_URL:-}
+      # 首次启动创建的管理员账号
+      - ADMIN_USER=${ADMIN_USER:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-xiangwang@2026}
+    volumes:
+      - ./data:/data
