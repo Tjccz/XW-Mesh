@@ -1,39 +1,49 @@
+# ⚠️ 注意：.dockerignore 的规则【锚定在构建上下文根目录】，
+#    与 .gitignore（不带斜杠的规则可匹配任意层级）语义不同。
+#    所以「任意层级都要排除」的规则必须写成 `**/xxx`。
+#    例：写 `.env` 只能排除根目录的 .env，
+#        deploy/dockge/.env 会漏进构建上下文。
+
 # 依赖（镜像内重新安装，避免平台差异）
 **/node_modules
 
-# 运行数据（数据库绝不进镜像）
-data/
-server/data/
-*.db
-*.db-wal
-*.db-shm
+# 运行数据 —— 数据库里有管理员口令散列与全量审计日志，
+# 绝不能进入构建上下文（会被送给 daemon 并留在缓存里）
+**/data
+**/node-state
+**/*.db
+**/*.db-wal
+**/*.db-shm
 
+# ────────────────────────────────────────────────────────────────
 # ⚠️ 这里刻意【没有】任何匹配 web/dist 的规则。
 #
 # Dockerfile.slim 靠 `COPY web/dist ./web/dist` 复用预构建前端，
 # 从而让 NAS / 软路由上无需安装 Node、无需跑 Vite。
-# 一旦 web/dist 被本文件排除出构建上下文，COPY 会在构建时直接失败
+# 一旦 web/dist 被本文件排除出构建上下文，构建会在 COPY 那一步直接失败
 # （报 "not found in build context or excluded by .dockerignore"）。
 #
 # 所以：不要在这里写 `**/dist`、`web/dist` 这类规则。
-# 将来若有别的构建产物要排除，请写成明确路径，例如 `/dist`。
+# 将来若有别的构建产物要排除，请写成明确路径。
+# 改完本文件后可执行 `python scripts/check-dockerignore.py .` 自检。
+# ────────────────────────────────────────────────────────────────
 
 # 环境与密钥
-.env
-.env.local
-.env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
 
 # 版本控制与文档
-.git
-.gitignore
-.gitattributes
-docs/
-*.md
+**/.git
+**/.gitignore
+**/.gitattributes
+**/docs
+**/*.md
 
 # 日志与临时文件
-*.log
-logs/
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
+**/*.log
+**/logs
+**/.DS_Store
+**/Thumbs.db
+**/.idea
+**/.vscode
