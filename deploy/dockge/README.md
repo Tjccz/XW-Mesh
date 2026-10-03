@@ -13,27 +13,33 @@ Dockge 里填个镜像名，点部署就完事了。
 docker pull ghcr.io/tjccz/xw-mesh-console:1.1.0
 ```
 
+已实测：**无需登录即可匿名拉取**。可用标签 `1.1.0` / `latest` / `sha-<短哈希>`，
+amd64 压缩后约 62.9 MB。
+
 ---
 
-## 一、首次必做：把包的可见性改成 Public
+## 一、确认镜像可拉取
 
-GitHub 的**包默认是 private**（即使仓库是公开的），所以第一次匿名拉取会报 401。
-这一步只做一次：
+正常情况下不用做任何事，直接 `docker pull` 就行。想先确认一下：
 
-1. 确认 Actions 已经跑过 —— 打开
-   `https://github.com/Tjccz/XW-Mesh/actions`，
-   看到「构建并发布镜像」是绿色对勾。
-   **若还没跑过**：点进去 → 右侧 **Run workflow** → 选 `main` → 运行，等 2~4 分钟。
-2. 打开 `https://github.com/users/Tjccz/packages/container/xw-mesh-console/settings`
-3. 拉到底部 **Danger Zone** → **Change visibility** → 选 **Public** → 按提示输入包名确认
-4. 节点镜像同样处理：
-   `https://github.com/users/Tjccz/packages/container/xw-mesh-node/settings`
+```sh
+docker pull ghcr.io/tjccz/xw-mesh-console:1.1.0
+docker pull ghcr.io/tjccz/xw-mesh-node:1.1.0
+```
 
-> 也可以用命令行一次搞定：
+> **只有在报 `401 Unauthorized` / `denied` 时才需要处理** ——
+> 那说明包的可见性被设成了 Private。去
+> `https://github.com/users/Tjccz/packages/container/xw-mesh-console/settings`
+> 底部 **Danger Zone** → **Change visibility** → **Public**。
+> 节点镜像同理。也可以用命令行：
 > ```sh
 > gh api -X PATCH /user/packages/container/xw-mesh-console -f visibility=public
 > gh api -X PATCH /user/packages/container/xw-mesh-node    -f visibility=public
 > ```
+>
+> 若报 `not found`（不是 401），则是镜像还没发布成功，
+> 去 `https://github.com/Tjccz/XW-Mesh/actions` 看构建状态；
+> 没跑过就点 **Run workflow** 手动触发，等 2~4 分钟。
 
 ---
 
