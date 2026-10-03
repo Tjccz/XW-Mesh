@@ -1,19 +1,91 @@
+# =====================================================================
+#  湘网组网（XW-Mesh）· 控制台 + 可选容器节点
+#  适用：宝塔面板 Docker 管理器 / 原生 docker compose v2
+#  使用：
+#    1) cp .env.example .env && vi .env   # 改密码与对外地址
+#    2) docker compose up -d --build
+#    3) 浏览器打开 http://服务器IP:8080
+# =====================================================================
+
 services:
+  # ------------------------------ 控制台 ------------------------------
   console:
-    build: .
-    image: xiangwang-mesh-console:0.1.0
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: xiangwang-mesh-console:${XW_VERSION:-1.1.0}
     container_name: xiangwang-console
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${HOST_PORT:-8080}:8080"
     environment:
-      - PORT=8080
-      - DATA_DIR=/data
-      # 部署在反向代理后面时，填写控制台的对外访问地址
-      # 节点接入脚本会使用这个地址回连控制台
-      - CONSOLE_URL=${CONSOLE_URL:-}
-      # 首次启动创建的管理员账号
-      - ADMIN_USER=${ADMIN_USER:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-xiangwang@2026}
+      PORT: 8080
+      DATA_DIR: /data
+      TZ: ${TZ:-Asia/Shanghai}
+      XW_VERSION: ${XW_VERSION:-1.1.0}
+      ET_VERSION: ${ET_VERSION:-2.6.4}
+      # 控制台对外访问地址：节点接入脚本靠它回连，务必填写真实域名
+      CONSOLE_URL: ${CONSOLE_URL:-}
+      # 首次启动创建的管理员账号（库中已有用户时忽略）
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     volumes:
+      # 数据库、配置快照等全部落在 ./data，备份只需拷这一个目录
       - ./data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - xw-net
+
+  # --------------------------- 本机作为节点 ---------------------------
+  # 可选：让这台服务器本身也加入组网（默认不启动）
+  # 启用：docker compose --profile agent up -d
+  node:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.node
+    image: xiangwang-mesh-node:${XW_VERSION:-1.1.0}
+    container_name: xiangwang-node
+    restart: unless-stopped
+    profiles: ["agent"]
+    depends_on:
+      console:
+        condition: service_started
+    environment:
+      # 同网络内可直接用服务名回连控制台
+      CONSOLE_URL: ${AGENT_CONSOLE_URL:-http://console:8080}
+      NODE_TOKEN: ${NODE_TOKEN:-}
+      ACCESS_KEY: ${ACCESS_KEY:-}
+      RPC_PORT: ${NODE_RPC_PORT:-15888}
+      ET_VERSION: ${ET_VERSION:-2.6.4}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./node-state:/var/lib/xiangwang
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    # 让容器内的网段流量能被本机转发（子网代理场景）
+    sysctls:
+      net.ipv4.ip_forward: 1
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - xw-net
+
+networks:
+  xw-net:
+    driver: bridge

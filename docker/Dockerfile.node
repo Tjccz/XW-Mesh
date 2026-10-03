@@ -1,0 +1,30 @@
+# =====================================================================
+#  湘网组网 · 节点镜像
+#  让一台服务器以容器方式加入组网，完整支持 ACL 与子网代理
+#  运行要求：--cap-add NET_ADMIN --cap-add NET_RAW --device /dev/net/tun
+#  说明：核心程序不打包进镜像，由入口脚本按架构按需下载
+#        （保持镜像轻量，且便于跟随上游版本更新）
+# =====================================================================
+FROM debian:12-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=Asia/Shanghai \
+    RPC_PORT=15888 \
+    ET_VERSION=2.6.4
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates curl unzip procps iproute2 iptables tzdata \
+ && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
+ && echo "Asia/Shanghai" > /etc/timezone \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY docker/agent-entrypoint.sh /usr/local/bin/xw-agent-entrypoint
+RUN chmod +x /usr/local/bin/xw-agent-entrypoint \
+ && mkdir -p /var/lib/xiangwang
+
+VOLUME ["/var/lib/xiangwang"]
+# 容器内网卡需要创建 TUN，必须放宽设备访问
+STOPSIGNAL SIGTERM
+
+ENTRYPOINT ["/usr/local/bin/xw-agent-entrypoint"]

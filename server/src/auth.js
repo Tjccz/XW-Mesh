@@ -21,13 +21,24 @@ export function hashPassword(password, salt) {
   return crypto.scryptSync(password, salt, 32).toString('hex')
 }
 
-export function createUser(username, password, role = 'admin') {
+/** 角色等级，数值越大权限越高 */
+export const ROLE_RANK = { viewer: 1, member: 2, admin: 3, owner: 4 }
+
+export const ROLE_LABEL = {
+  owner: '拥有者',
+  admin: '管理员',
+  member: '成员',
+  viewer: '只读',
+}
+
+export function createUser(username, password, role = 'member', workspaceId = null, displayName = '') {
   const salt = crypto.randomBytes(16).toString('hex')
   const hash = hashPassword(password, salt)
   const stmt = db.prepare(
-    'INSERT INTO users (username, password_hash, salt, role, created_at) VALUES (?, ?, ?, ?, ?)'
+    `INSERT INTO users (username, password_hash, salt, role, workspace_id, display_name, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
   )
-  const info = stmt.run(username, hash, salt, role, now())
+  const info = stmt.run(username, hash, salt, role, workspaceId, displayName, now())
   return Number(info.lastInsertRowid)
 }
 
@@ -74,11 +85,61 @@ export function requireAuth(req, res, next) {
   next()
 }
 
-export function ensureDefaultAdmin() {
+/** 要求当前用户达到某个最低角色等级 */
+export function requireMinRole(min) {
+  return (req, res, next) => {
+    const rank = ROLE_RANK[req.user?.role] || 0
+    if (rank < ROLE_RANK[min]) {
+      return res.status(403).json({ error: '当前角色没有该操作权限' })
+    }
+    next()
+  }
+}
+
+/**
+ * 首次启动引导：确保存在默认工作区与拥有者账号，并为老数据补齐工作区归属
+ * 自建部署默认使用 selfhost 套餐（不限量），可在「工作区设置」中切换为试用版/专业版演示配额
+ */
+export function ensureBootstrap() {
+  let workspace = db.prepare('SELECT * FROM workspaces ORDER BY id LIMIT 1').get()
+
+  if (!workspace) {
+    const info = db
+      .prepare(
+        'INSERT INTO workspaces (name, slug, plan, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
+      )
+      .run('长沙湘网智能科技', 'xiangwang', 'selfhost', now(), now())
+    workspace = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(Number(info.lastInsertRowid))
+  }
+
+  db.prepare('UPDATE networks SET workspace_id = ? WHERE workspace_id IS NULL').run(workspace.id)
+  db.prepare('UPDATE nodes SET workspace_id = ? WHERE workspace_id IS NULL').run(workspace.id)
+  db.prepare('UPDATE subnet_routes SET workspace_id = ? WHERE workspace_id IS NULL').run(workspace.id)
+  db.prepare('UPDATE acl_rules SET workspace_id = ? WHERE workspace_id IS NULL').run(workspace.id)
+  db.prepare('UPDATE access_keys SET workspace_id = ? WHERE workspace_id IS NULL').run(workspace.id)
+  db.prepare('UPDATE audit_logs SET workspace_id = ? WHERE workspace_id IS NULL').run(workspace.id)
+
   const count = db.prepare('SELECT COUNT(*) AS c FROM users').get().c
-  if (count > 0) return null
+  if (count > 0) {
+    db.prepare('UPDATE users SET workspace_id = ? WHERE workspace_id IS NULL').run(workspace.id)
+
+    // 老版本没有「拥有者」角色，把最早的管理员提升为拥有者，否则工作区设置与成员管理会无人可用
+    const hasOwner = db
+      .prepare("SELECT COUNT(*) AS c FROM users WHERE workspace_id = ? AND role = 'owner'")
+      .get(workspace.id).c
+    if (!hasOwner) {
+      const firstAdmin = db
+        .prepare(
+          "SELECT id FROM users WHERE workspace_id = ? ORDER BY (role = 'admin') DESC, id LIMIT 1"
+        )
+        .get(workspace.id)
+      if (firstAdmin) db.prepare("UPDATE users SET role = 'owner' WHERE id = ?").run(firstAdmin.id)
+    }
+    return { workspace, created: null }
+  }
+
   const username = process.env.ADMIN_USER || 'admin'
   const password = process.env.ADMIN_PASSWORD || 'xiangwang@2026'
-  createUser(username, password)
-  return { username, password }
+  createUser(username, password, 'owner', workspace.id, '管理员')
+  return { workspace, created: { username, password } }
 }

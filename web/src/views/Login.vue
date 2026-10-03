@@ -42,7 +42,8 @@ async function submit() {
         <ul class="hero-points">
           <li><el-icon><Check /></el-icon> 设备一键接入，无需公网 IP</li>
           <li><el-icon><Check /></el-icon> 配置集中下发，变更可回滚</li>
-          <li><el-icon><Check /></el-icon> 数据留在自己手里</li>
+          <li><el-icon><Check /></el-icon> 子网路由打通内网，访问控制精细隔离</li>
+          <li><el-icon><Check /></el-icon> 流量用量可视，操作全程留痕</li>
         </ul>
       </section>
 

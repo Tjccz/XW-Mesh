@@ -130,3 +130,173 @@ body {
   text-align: center;
   padding: 36px 0;
 }
+
+/* ---------------- 通用小组件 ---------------- */
+
+.xw-card + .xw-card {
+  margin-top: 16px;
+}
+
+.xw-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.xw-card-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--xw-ink);
+}
+
+.xw-card-head .sub {
+  font-size: 12.5px;
+  color: #9ca3af;
+  font-weight: 400;
+  margin-left: 8px;
+}
+
+.xw-hint {
+  font-size: 12.5px;
+  color: #9ca3af;
+  line-height: 1.7;
+}
+
+.xw-dim {
+  color: #9ca3af;
+}
+
+.xw-strong {
+  color: var(--xw-ink);
+  font-weight: 600;
+}
+
+.xw-toolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.xw-toolbar .spacer {
+  margin-left: auto;
+}
+
+.xw-script-sm {
+  background: #0f2b33;
+  color: #d3ecea;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+.xw-tabs .el-tabs__header {
+  margin-bottom: 14px;
+}
+
+/* 键值对列表 */
+.xw-kv {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.xw-kv-item {
+  border: 1px solid #eef2f3;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #fbfcfc;
+}
+
+.xw-kv-label {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-bottom: 4px;
+}
+
+.xw-kv-value {
+  font-size: 14px;
+  color: var(--xw-ink);
+  font-weight: 600;
+  word-break: break-all;
+}
+
+/* 配额进度 */
+.xw-quota {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.xw-quota-row {
+  display: grid;
+  grid-template-columns: 92px 1fr 84px;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.xw-quota-row .name {
+  color: #4b5563;
+}
+
+.xw-quota-row .num {
+  text-align: right;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+  font-size: 12.5px;
+}
+
+.xw-quota-row .num b {
+  color: var(--xw-ink);
+}
+
+/* 平台接入方式 */
+.xw-method {
+  border: 1px solid #e6ebed;
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.xw-method-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.xw-method-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--xw-ink);
+}
+
+.xw-method-desc {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-bottom: 10px;
+  line-height: 1.65;
+}
+
+.xw-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.xw-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+

@@ -1,0 +1,30 @@
+# 依赖（镜像内重新安装，避免平台差异）
+**/node_modules
+
+# 构建产物与数据（镜像内重新构建，数据库绝不进镜像）
+**/dist
+data/
+server/data/
+*.db
+*.db-wal
+*.db-shm
+
+# 环境与密钥
+.env
+.env.local
+.env.*.local
+
+# 版本控制与文档
+.git
+.gitignore
+.gitattributes
+docs/
+*.md
+
+# 日志与临时文件
+*.log
+logs/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
