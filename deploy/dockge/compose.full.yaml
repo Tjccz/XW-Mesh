@@ -1,5 +1,5 @@
 # =====================================================================
-#  湘网组网 · 控制台 + 本机节点（让这台软路由自己也加入组网）
+#  湘网组网 · 控制台 + 本机节点（让这台机器自己也加入组网）
 #
 #  这是 compose.yaml 的「完整版」，在你已经登录控制台、
 #  创建好网络与接入密钥之后再换成这个文件重新部署。
@@ -10,6 +10,9 @@
 #      docker build -f docker/Dockerfile.node -t xiangwang-mesh-node:1.1.0 .
 #
 #  已在 .env 中设置 ACCESS_KEY（控制台「设备接入密钥」里新建后复制）
+#
+#  注意：NAS 上启用本机节点需要 /dev/net/tun。大部分 x86 NAS 自带，
+#        若报错请确认宿主机存在该设备（群晖/飞牛通常都有）。
 # =====================================================================
 
 services:
@@ -25,7 +28,9 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
       XW_VERSION: ${XW_VERSION:-1.1.0}
       ET_VERSION: ${ET_VERSION:-2.6.4}
-      CONSOLE_URL: ${CONSOLE_URL:-http://192.168.88.5:8080}
+      # 留空即可：程序会回退成「浏览器当前访问的地址」，
+      # 换机器/换端口都不用改配置。只有走域名或反向代理时才需要显式指定。
+      CONSOLE_URL: ${CONSOLE_URL:-}
       ADMIN_USER: ${ADMIN_USER:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请先在 .env 中设置 ADMIN_PASSWORD}
     volumes:
