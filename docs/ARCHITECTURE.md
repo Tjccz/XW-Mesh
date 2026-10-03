@@ -327,7 +327,7 @@ selfhost 999 网络 / 999 设备 / 99 密钥 / 99 条 ACL / 99 成员 / 30 天�
 
 | 方式 | 入口 | 进程托管 |
 | --- | --- | --- |
-| 原生 Linux / NAS | `templates/node-install.sh` 生成的脚本 | systemd service + timer |
+| 原生 Linux / NAS | `server/src/templates/node-install.sh` 生成的脚本 | systemd service + timer |
 | 容器 | `docker/agent-entrypoint.sh` | sh 主循环守护子进程 |
 
 两者都实现：配置预检、心跳上报、流量采集、配置同步、吊销联动。容器版额外支持「用接入密钥首次注册后把令牌落盘，重启不重复占号」。

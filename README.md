@@ -205,15 +205,15 @@ xiangwang-mesh/
 │   │   │   ├── audit.js            审计日志
 │   │   │   ├── workspaces.js       工作区与成员
 │   │   │   └── agent.js            节点侧接口（安装/注册/心跳/配置）
-│   │   └── services/
-│   │       ├── config.js           TOML 生成、ACL 编译、配置快照
-│   │       ├── provision.js        接入脚本渲染与虚拟 IP 分配
-│   │       ├── quota.js            套餐配额
-│   │       ├── alerts.js           告警对账扫描引擎
-│   │       ├── notify.js           四类渠道投递与配置校验/脱敏
-│   │       ├── smtp.js             极简 SMTP 客户端（零依赖）
-│   │       └── audit.js            审计写入
-│   └── templates/node-install.sh   节点接入脚本模板（双模式）
+│   │   ├── services/
+│   │   │   ├── config.js           TOML 生成、ACL 编译、配置快照
+│   │   │   ├── provision.js        接入脚本渲染与虚拟 IP 分配
+│   │   │   ├── quota.js            套餐配额
+│   │   │   ├── alerts.js           告警对账扫描引擎
+│   │   │   ├── notify.js           四类渠道投递与配置校验/脱敏
+│   │   │   ├── smtp.js             极简 SMTP 客户端（零依赖）
+│   │   │   └── audit.js            审计写入
+│   │   └── templates/node-install.sh  节点接入脚本模板（双模式）
 ├── web/                            控制台前端（Vue 3 + Vite）
 │   └── src/views/                  13 个页面
 ├── docker/
@@ -221,7 +221,7 @@ xiangwang-mesh/
 │   └── agent-entrypoint.sh         节点容器入口（心跳 + 配置同步）
 ├── scripts/
 │   ├── deploy.sh                   服务器一键部署
-│   ├── smoke-test.mjs              接口自检（215 项）
+│   ├── smoke-test.mjs              接口自检（216 项）
 │   ├── test-smtp.mjs               SMTP 客户端自测（31 项，含真实 TLS 握手）
 │   ├── seed-demo.mjs               幂等演示数据
 │   └── screenshots.mjs             Playwright 批量截图
