@@ -179,7 +179,7 @@ curl -fsSL "https://你的控制台域名/api/agent/install.sh?key=ek_xxxxxxxx" 
 | 后端 | Node.js 22 + Express 4（ESM） |
 | 数据库 | SQLite（Node 内置 `node:sqlite`，无需额外服务，方便单机部署与备份） |
 | 节点侧 | 官方 `easytier-core` 二进制 + POSIX Shell 代理（systemd / Docker 两种托管方式） |
-| 部署 | 多阶段 Dockerfile + Docker Compose v2（宝塔面板图形化可管） |
+| 部署 | 多阶段 Dockerfile + Docker Compose v2；NAS / 软路由侧另有 Dockge 部署包（见 `deploy/dockge/`） |
 
 ---
 
@@ -215,7 +215,14 @@ xiangwang-mesh/
 │   │   │   └── audit.js            审计写入
 │   │   └── templates/node-install.sh  节点接入脚本模板（双模式）
 ├── web/                            控制台前端（Vue 3 + Vite）
-│   └── src/views/                  13 个页面
+│   ├── src/views/                  13 个页面
+│   └── dist/                       预构建产物（随仓库提供，部署端无需安装 Node）
+├── deploy/dockge/                  NAS / 软路由 Dockge 部署
+│   ├── compose.yaml                控制台编排（宿主机端口 6088）
+│   ├── compose.full.yaml           叠加本机节点
+│   ├── Dockerfile.slim             复用 web/dist 的精简镜像
+│   ├── .env.example                变量模板
+│   └── README.md                   部署指南
 ├── docker/
 │   ├── Dockerfile.node             可选节点镜像
 │   └── agent-entrypoint.sh         节点容器入口（心跳 + 配置同步）
@@ -223,6 +230,7 @@ xiangwang-mesh/
 │   ├── deploy.sh                   服务器一键部署
 │   ├── smoke-test.mjs              接口自检（216 项）
 │   ├── test-smtp.mjs               SMTP 客户端自测（31 项，含真实 TLS 握手）
+│   ├── check-dockerignore.py       .dockerignore 规则自检（无需 Docker）
 │   ├── seed-demo.mjs               幂等演示数据
 │   └── screenshots.mjs             Playwright 批量截图
 ├── docs/
@@ -249,11 +257,14 @@ xiangwang-mesh/
 ### 自检
 
 ```bash
-# 后端接口全链路自检（需服务已在 8080 运行，215 项）
+# 后端接口全链路自检（需服务已在 8080 运行，216 项）
 node scripts/smoke-test.mjs
 
 # SMTP 客户端自测（现场起模拟服务器，含隐式 TLS 与 STARTTLS 升级，31 项）
 node scripts/test-smtp.mjs
+
+# .dockerignore 规则自检（移植 moby/patternmatcher 语义，本机没有 Docker 也能跑）
+python scripts/check-dockerignore.py .
 
 # 灌入演示数据（幂等，含 7 天流量采样与告警历史）
 node --experimental-sqlite scripts/seed-demo.mjs
@@ -263,6 +274,8 @@ node scripts/screenshots.mjs
 ```
 
 > 演示数据必须与「真实成立的条件」对齐：告警事件用的是真实设备/密钥 ID，否则 60 秒一轮的对账扫描会立刻把它们判为已恢复。
+>
+> 改过 `.dockerignore` 后务必跑一次 `check-dockerignore.py`：它的规则**锚定在构建上下文根目录**（与 `.gitignore` 不同），写错会让 `web/dist` 被排除，`docker build` 直接失败。
 
 ---
 
