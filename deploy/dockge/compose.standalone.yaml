@@ -1,0 +1,56 @@
+# =====================================================================
+#  湘网组网 · 控制台 —— 单文件版（不需要 .env）
+#
+#  用法：整份粘进 Dockge 的「+ Compose」编辑器 →
+#        改掉下面标了 ⚠️ 的 ADMIN_PASSWORD →
+#        点「部署」。
+#
+#  与 compose.yaml 的区别：这里把所有变量都写成了实际值，
+#  不必额外维护 .env 文件，少一步操作。
+#  想用标准做法（compose + .env 分离）见 compose.yaml 与 .env.example。
+#
+#  镜像来自 GitHub，宿主机不需要做任何构建。
+# =====================================================================
+
+services:
+  console:
+    image: ghcr.io/tjccz/xw-mesh-console:1.1.0
+    container_name: xiangwang-console
+    restart: unless-stopped
+    ports:
+      # 左边是宿主机端口（浏览器访问用），右边是容器内端口，不要改右边。
+      # 6088 是刻意选的 —— 避开 NAS 上常被占用的 8080。
+      # 若 6088 也被占用，只改左边这个数字即可。
+      - "6088:8080"
+    environment:
+      PORT: 8080
+      DATA_DIR: /data
+      TZ: Asia/Shanghai
+      XW_VERSION: 1.1.0
+      ET_VERSION: 2.6.4
+
+      # 不设 / 留空：程序自动回退成「浏览器当前访问的地址」，
+      # 换机器、换 IP、换端口都不用改这里。
+      # 只有走域名或反向代理时才需要显式指定，例如：
+      #   CONSOLE_URL: "https://mesh.example.com"
+
+      ADMIN_USER: admin
+
+      # ⚠️⚠️ 把这里改成你自己的强密码（至少 12 位，别用 123456）
+      ADMIN_PASSWORD: "请改成你自己的强密码"
+
+    volumes:
+      # 数据库与配置快照都在这里。相对路径是相对本 Stack 目录，
+      # 即 <Dockge栈目录>/xiangwang-mesh/data —— 备份拷这个目录就行。
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

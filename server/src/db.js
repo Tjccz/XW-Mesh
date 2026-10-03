@@ -8,7 +8,48 @@ export const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data
 
 fs.mkdirSync(DATA_DIR, { recursive: true })
 
-export const db = new DatabaseSync(path.join(DATA_DIR, 'xiangwang.db'))
+const rawDb = new DatabaseSync(path.join(DATA_DIR, 'xiangwang.db'))
+
+// ---------------------------------------------------------------------------
+// 绑定参数兜底：把 undefined 归一为 null
+//
+// node:sqlite 不接受 undefined 作为绑定值，会直接抛
+//   TypeError: Provided value cannot be bound to SQLite parameter N
+// 而「没有这个值」在 SQL 里的正确表达是 NULL。
+//
+// 少了这层兜底，「请求漏传某个字段」会穿过路由的参数校验，
+// 变成 500「服务器内部错误」—— 排查时看不出是哪个字段缺了，
+// 只有翻服务端日志才能看到那次 TypeError。
+//
+// 归一为 null 后，查询正常返回空结果，交给路由里既有的
+// `if (!row) return res.status(400)...` 给出可读提示。
+//
+// 边界：INSERT 时若该列是 NOT NULL，仍会抛约束错误（同样是 500，不更糟）；
+//       命名为参数/数组形式本仓库未使用，故只处理位置参数。
+// ---------------------------------------------------------------------------
+const bindNull = (args) => args.map((v) => (v === undefined ? null : v))
+
+const wrapStatement = (stmt) =>
+  new Proxy(stmt, {
+    get(target, prop) {
+      const value = Reflect.get(target, prop)
+      if (typeof value !== 'function') return value
+      if (prop === 'run' || prop === 'get' || prop === 'all' || prop === 'iterate') {
+        return (...args) => value.apply(target, bindNull(args))
+      }
+      return value.bind(target)
+    },
+  })
+
+export const db = new Proxy(rawDb, {
+  get(target, prop) {
+    if (prop === 'prepare') {
+      return (sql) => wrapStatement(target.prepare(sql))
+    }
+    const value = Reflect.get(target, prop)
+    return typeof value === 'function' ? value.bind(target) : value
+  },
+})
 
 db.exec('PRAGMA journal_mode = WAL')
 db.exec('PRAGMA foreign_keys = ON')

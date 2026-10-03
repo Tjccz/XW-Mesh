@@ -322,6 +322,30 @@ async function run() {
     expect('密钥状态为 active', data?.item?.status === 'active')
   }
 
+  // 回归：node:sqlite 不接受 undefined 作为绑定参数，会抛
+  // TypeError: Provided value cannot be bound to SQLite parameter N。
+  // 若 db.js 里的绑定参数兜底被去掉，缺字段的请求就会变成
+  // 500「服务器内部错误」，而不是路由里写好的 400 —— 排查时
+  // 完全看不出是哪个字段缺了，只能翻服务端日志。
+  {
+    const { status, data } = await api('POST', '/api/access-keys', { name: `缺网络ID-${STAMP}` })
+    expect(
+      '缺 networkId 返回 400（而非 500）且提示可读',
+      status === 400 && /网络/.test(data?.error || ''),
+      `HTTP ${status} ${data?.error || ''}`
+    )
+  }
+
+  {
+    // 有合法网络但缺 name —— 同样不应是 500
+    const { status, data } = await api('POST', '/api/access-keys', { networkId })
+    expect(
+      '缺 name 返回 400（而非 500）',
+      status === 400,
+      `HTTP ${status} ${data?.error || ''}`
+    )
+  }
+
   {
     const { status, data } = await api('GET', `/api/access-keys/${keyId}/commands`)
     const { status: s2 } = await api('POST', '/api/workspaces/members', {

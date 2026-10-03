@@ -124,14 +124,31 @@ if os.path.isfile(rel(workflow_path)):
     wf_images = set(re.findall(r'/(xw-mesh-[a-z0-9-]+)"', wf_text))
 check('workflow 中能识别出镜像名', len(wf_images) > 0, str(wf_images))
 
-for comp in ('deploy/dockge/compose.yaml', 'deploy/dockge/compose.full.yaml'):
+# 自动发现所有 Dockge compose 变体，避免新增文件时漏检
+dockge_dir = rel('deploy/dockge')
+comp_files = sorted(
+    f'deploy/dockge/{f}'
+    for f in os.listdir(dockge_dir)
+    if f.startswith('compose') and f.endswith(('.yaml', '.yml'))
+)
+check('发现 Dockge compose 文件', len(comp_files) > 0, str(comp_files))
+
+for comp in comp_files:
     if not os.path.isfile(rel(comp)):
         check(f'{comp} 存在', False)
         continue
     text = read_text(comp)
-    images = re.findall(r'image:\s*\$\{[A-Z_]+:-([^}]+)\}', text)
-    check(f'{comp} 使用了可覆盖的镜像变量', len(images) > 0)
-    for img in images:
+    # 兼容两种写法：
+    #   image: ${CONSOLE_IMAGE:-ghcr.io/o/i:1.1.0}     （变量可覆盖）
+    #   image: ghcr.io/o/i:1.1.0                       （单文件版，写死）
+    raw_images = re.findall(r'^\s*image:\s*(.+?)\s*$', text, re.M)
+    resolved = []
+    for raw in raw_images:
+        m = re.match(r'^\$\{[A-Z_]+:-(.+)\}$', raw)
+        resolved.append((raw, m.group(1) if m else raw))
+
+    check(f'{comp} 有镜像声明', len(resolved) > 0)
+    for raw, img in resolved:
         name, _, tag = img.rpartition(':')
         check(f'{comp} 镜像标签 {tag} == package.json 版本 {version}',
               tag == version, f'镜像={tag} package={version}')

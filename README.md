@@ -57,11 +57,13 @@
 docker pull ghcr.io/tjccz/xw-mesh-console:1.1.0
 ```
 
-在 Dockge 里新建 Stack，粘 `deploy/dockge/compose.yaml` 与 `deploy/dockge/.env.example` 的内容即可。
-完整步骤（含首次需把包可见性改为 Public 这一步）见 **[deploy/dockge/README.md](deploy/dockge/README.md)**。
+在 Dockge 里点 **「+ Compose」**，名称填 `xiangwang-mesh`，
+把 **`deploy/dockge/compose.standalone.yaml`** 整份粘进去、改掉 `ADMIN_PASSWORD`、
+点「部署」即可（单文件版，不需要另外维护 `.env`）。
+完整步骤见 **[deploy/dockge/README.md](deploy/dockge/README.md)**。
 
-> 首次匿名拉取若报 401，是因为 GitHub 的包默认是 private —— 去
-> 头像 → Your packages → 选中包 → Change visibility → Public，只需做一次。
+> 实测可**匿名拉取**，无需登录或改任何设置。
+> 万一报 401，才需要去 Package settings 把可见性改成 Public。
 
 ### 方式二：宝塔面板 + Docker（推荐生产使用）
 
@@ -234,7 +236,8 @@ xiangwang-mesh/
 ├── .github/workflows/
 │   └── docker-publish.yml          推 main 自动构建并发布镜像到 GHCR
 ├── deploy/dockge/                  NAS / 软路由 Dockge 部署
-│   ├── compose.yaml                控制台编排（宿主机端口 6088）
+│   ├── compose.standalone.yaml     单文件版（推荐，粘一次即可，无需 .env）
+│   ├── compose.yaml                标准版（宿主机端口 6088）
 │   ├── compose.full.yaml           叠加本机节点
 │   ├── Dockerfile.slim             复用 web/dist 的精简镜像
 │   ├── .env.example                变量模板
@@ -244,7 +247,7 @@ xiangwang-mesh/
 │   └── agent-entrypoint.sh         节点容器入口（心跳 + 配置同步）
 ├── scripts/
 │   ├── deploy.sh                   服务器一键部署
-│   ├── smoke-test.mjs              接口自检（216 项）
+│   ├── smoke-test.mjs              接口自检（218 项）
 │   ├── test-smtp.mjs               SMTP 客户端自测（31 项，含真实 TLS 握手）
 │   ├── check-dockerignore.py       .dockerignore 规则自检（无需 Docker）
 │   ├── check-ci.py                 CI 与部署配置一致性自检（版本号/镜像名）
@@ -274,7 +277,7 @@ xiangwang-mesh/
 ### 自检
 
 ```bash
-# 后端接口全链路自检（需服务已在 8080 运行，216 项）
+# 后端接口全链路自检（需服务已在 8080 运行，218 项）
 node scripts/smoke-test.mjs
 
 # SMTP 客户端自测（现场起模拟服务器，含隐式 TLS 与 STARTTLS 升级，31 项）
