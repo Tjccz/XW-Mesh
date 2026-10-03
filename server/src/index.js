@@ -16,6 +16,8 @@ import accessKeyRoutes from './routes/accessKeys.js'
 import policyRoutes from './routes/policies.js'
 import metricsRoutes from './routes/metrics.js'
 import usageRoutes from './routes/usage.js'
+import alertRoutes from './routes/alerts.js'
+import { startAlertScanner } from './services/alerts.js'
 import { DEFAULT_ET_VERSION } from './services/provision.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -47,6 +49,7 @@ app.use('/api/access-keys', accessKeyRoutes)
 app.use('/api/policies', policyRoutes)
 app.use('/api/metrics', metricsRoutes)
 app.use('/api/usage', usageRoutes)
+app.use('/api/alerts', alertRoutes)
 app.use('/api/audit', auditRoutes)
 app.use('/api/agent', agentRoutes)
 
@@ -88,5 +91,9 @@ app.listen(PORT, () => {
     console.log('')
     console.log('  提示：未检测到前端构建产物，开发时请另开终端运行 web 的 dev server。')
   }
+  console.log('')
+
+  // 告警扫描：与控制台共进程，周期性对账「规则 vs 现状」
+  startAlertScanner(Number(process.env.ALERT_SCAN_INTERVAL_MS) || 60 * 1000)
   console.log('')
 })

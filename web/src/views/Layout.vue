@@ -35,6 +35,7 @@ const groups = [
     items: [
       { path: '/metrics', label: '流量监控', icon: 'TrendCharts' },
       { path: '/usage', label: '用量统计', icon: 'PieChart' },
+      { path: '/alerts', label: '告警中心', icon: 'Bell' },
       { path: '/audit', label: '审计日志', icon: 'Tickets' },
     ],
   },

@@ -132,6 +132,56 @@ CREATE TABLE IF NOT EXISTS traffic_samples (
   sampled_at  TEXT NOT NULL
 );
 
+-- 通知渠道：webhook / wecom（企业微信机器人）/ dingtalk（钉钉机器人）/ email
+CREATE TABLE IF NOT EXISTS alert_channels (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL,
+  name         TEXT NOT NULL,
+  type         TEXT NOT NULL DEFAULT 'webhook',
+  config_json  TEXT NOT NULL DEFAULT '{}',
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  last_status  TEXT NOT NULL DEFAULT '',
+  last_error   TEXT NOT NULL DEFAULT '',
+  last_test_at TEXT,
+  created_at   TEXT NOT NULL
+);
+
+-- 告警规则：事件类型 + 阈值 + 作用范围 + 通知渠道
+CREATE TABLE IF NOT EXISTS alert_rules (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id    INTEGER NOT NULL,
+  name            TEXT NOT NULL,
+  event_type      TEXT NOT NULL,
+  threshold       INTEGER NOT NULL DEFAULT 10,
+  network_id      INTEGER,
+  level           TEXT NOT NULL DEFAULT 'warning',
+  channel_ids     TEXT NOT NULL DEFAULT '',
+  silence_minutes INTEGER NOT NULL DEFAULT 30,
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  created_at      TEXT NOT NULL
+);
+
+-- 告警事件：firing（触发中）/ resolved（已恢复）
+CREATE TABLE IF NOT EXISTS alert_events (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id INTEGER NOT NULL,
+  rule_id      INTEGER,
+  rule_name    TEXT NOT NULL DEFAULT '',
+  event_type   TEXT NOT NULL,
+  level        TEXT NOT NULL DEFAULT 'warning',
+  target_type  TEXT NOT NULL DEFAULT '',
+  target_id    TEXT NOT NULL DEFAULT '',
+  target_name  TEXT NOT NULL DEFAULT '',
+  message      TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'firing',
+  deliveries   TEXT NOT NULL DEFAULT '[]',
+  fired_at     TEXT NOT NULL,
+  resolved_at  TEXT,
+  ack_at       TEXT,
+  ack_by       TEXT,
+  updated_at   TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_nodes_network ON nodes(network_id);
 CREATE INDEX IF NOT EXISTS idx_configs_node ON node_configs(node_id, version DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at DESC);
@@ -179,6 +229,10 @@ CREATE INDEX IF NOT EXISTS idx_audit_ws ON audit_logs(workspace_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_keys_ws ON access_keys(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_subnet_ws ON subnet_routes(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_acl_ws ON acl_rules(workspace_id, priority);
+CREATE INDEX IF NOT EXISTS idx_channels_ws ON alert_channels(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_alert_rules_ws ON alert_rules(workspace_id, enabled);
+CREATE INDEX IF NOT EXISTS idx_alert_events_ws ON alert_events(workspace_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_alert_events_open ON alert_events(rule_id, target_id, status);
 `)
 
 export const now = () => new Date().toISOString()

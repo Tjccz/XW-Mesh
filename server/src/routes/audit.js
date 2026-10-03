@@ -38,6 +38,15 @@ const ACTION_LABEL = {
   acl_create: '添加访问控制',
   acl_update: '更新访问控制',
   acl_delete: '删除访问控制',
+  'alert.channel.create': '新建通知渠道',
+  'alert.channel.update': '修改通知渠道',
+  'alert.channel.delete': '删除通知渠道',
+  'alert.channel.test': '测试通知渠道',
+  'alert.rule.create': '新建告警规则',
+  'alert.rule.update': '修改告警规则',
+  'alert.rule.delete': '删除告警规则',
+  'alert.ack': '确认告警',
+  'alert.scan': '执行告警扫描',
 }
 
 function shape(r) {

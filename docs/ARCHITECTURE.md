@@ -210,6 +210,36 @@ const CHAIN_TYPE    = { inbound: 1, outbound: 2, forward: 3 }
 
 RPC 只在节点本机可访问（`127.0.0.1:15888`），控制台无法直连（除非暴露端口，那会带来安全风险）。因此统一由节点侧代理主动上报，控制台永远不需要入站访问设备——**这对 NAT 后面的设备是硬性要求**。
 
+### 5.5 告警：对账，而不是在写入路径埋钩子
+
+告警最容易写错的地方是「在哪触发」。直觉做法是在改数据时顺手发一条通知（比如设备心跳超时就发），但这条路有三个躲不掉的坑：
+
+| 坑 | 后果 |
+| --- | --- |
+| 漏发 | 心跳是设备推上来的，控制台重启期间没人推数据，谁来判断「已经离线超过 10 分钟」？ |
+| 重发 | 设备离线后每 30 秒一次心跳超时检查，会连发几十条同样的告警 |
+| 扩展成本 | 每加一类事件（磁盘满、证书到期…）都要回到业务写入路径里插代码 |
+
+**采用的做法：周期性对账（reconcile）。** 扫描器不关心「什么变了」，只回答「此刻哪些条件成立」：
+
+```
+每 60 秒：
+  1. 遍历所有启用规则 → 算出「此刻应当告警」的目标集合 expected
+  2. 查库中所有 firing 事件 → actual
+  3. expected − actual → 新触发（建事件 + 投递 + 静默期抑制）
+     actual − expected → 条件已消失（置 resolved + 发恢复通知）
+```
+
+这个模型同时解决了三件事：
+
+- **漏发不存在**：判断权在控制台，与设备是否上报无关
+- **重发天然不存在**：已在 `firing` 的目标不在差集里，不需要额外的去重逻辑
+- **新增事件类型只加一个求值器**：写一个纯函数 `(rule, ctx) => 命中目标[]` 并注册进 `EVALUATORS`，不碰任何业务代码
+
+**这个模型的代价**：告警有最多 60 秒的检测延迟；以及**必须保证幂等**——同一轮重复执行不能产生副作用，否则每轮都会重复建事件。这也是为什么 `scanWorkspace()` 里所有写操作都是「先查后写」。
+
+**一个容易被忽略的连带要求**：演示/测试数据必须与真实条件对齐。`seed-demo.mjs` 回填告警事件时用的是**真实设备与密钥的 ID**，并且只造「条件确实成立」的事件——否则 60 秒后对账扫描会把这些事件全部判为已恢复。这是对账模型下写测试数据必须遵守的规则。
+
 ---
 
 ## 六、数据模型
@@ -229,6 +259,13 @@ subnet_routes   子网路由：network_id / node_id / cidr / description / works
 acl_rules       访问控制：name / action / protocol / chain_type / src_cidr / dst_cidr /
                       ports / priority / enabled / workspace_id
 traffic_samples 流量采样：node_id / rx_bytes / tx_bytes / peer_count / sampled_at
+alert_channels  通知渠道：name / type / config_json / enabled / last_status / last_error /
+                      last_test_at / workspace_id
+alert_rules     告警规则：name / event_type / threshold / network_id / level / channel_ids /
+                      silence_minutes / enabled / workspace_id
+alert_events    告警事件：rule_id / rule_name / event_type / level / target_type / target_id /
+                      target_name / message / status / deliveries / fired_at / resolved_at /
+                      ack_at / ack_by / workspace_id
 audit_logs      审计日志：username / action / target_type / target_id / detail / ip / workspace_id
 ```
 
@@ -238,6 +275,8 @@ audit_logs      审计日志：username / action / target_type / target_id / det
 | --- | --- |
 | `node_configs.config_json` 存整个配置 JSON | 保证任意历史版本可完整还原；配置文件本身很小（几 KB），不会造成存储压力 |
 | `subnet_routes` 与 `nodes.subnet_proxy` 并存 | 前者是关系表（前端好查询、好展示），后者是冗余字段（生成 TOML 时避免 JOIN） |
+| `alert_events.rule_name` 与 `rule_id` 同时存 | 规则被删除后历史事件仍要能读——审计性质的数据不能让引用变成悬空 |
+| `alert_events.deliveries` 存 JSON 快照 | 投递明细是「当时发生了什么」的证据，不能随后续渠道改名/改配置而变化 |
 | 迁移一律走 `ensureColumn()` | 增量补列 + `CREATE INDEX IF NOT EXISTS`，**不引入迁移框架**，老库直接启动即完成升级 |
 | 索引必须在补列之后创建 | 老库的 `workspace_id` 列由 `ensureColumn` 补齐，若索引语句写在其前会报 `no such column` —— 这是实现中踩过的坑 |
 

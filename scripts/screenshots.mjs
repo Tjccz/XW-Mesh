@@ -80,6 +80,7 @@ async function main() {
     ['acl', '09-acl'],
     ['metrics', '10-metrics'],
     ['usage', '11-usage'],
+    ['alerts', '17-alerts'],
     ['audit', '12-audit'],
     ['members', '13-members'],
     ['workspace', '14-workspace'],
@@ -116,6 +117,34 @@ async function main() {
     await page.keyboard.press('Escape')
   } else {
     console.log('  · 跳过编译预览（当前网络无规则）')
+  }
+
+  // 告警中心：规则标签页 / 渠道标签页 / 新建渠道弹窗
+  await page.goto(`${BASE}/alerts`, { waitUntil: 'networkidle' })
+  for (const [label, name] of [
+    ['告警规则', '18-alert-rules'],
+    ['通知渠道', '19-alert-channels'],
+  ]) {
+    const tabItem = page.locator('.el-tabs__item', { hasText: label }).first()
+    if (await tabItem.count()) {
+      await tabItem.click()
+      await shot(name, 1000)
+    }
+  }
+  const newChanBtn = page.locator('button:has-text("新建渠道")').first()
+  if (await newChanBtn.count()) {
+    await newChanBtn.click()
+    await page.waitForTimeout(900)
+    const dialog = page.locator('.el-dialog:visible').first()
+    const select = dialog.locator('.el-select').first()
+    if (await select.count()) {
+      await select.click()
+      await page.waitForTimeout(500)
+      const opt = page.locator('.el-select-dropdown__item:visible', { hasText: '邮件' }).first()
+      if (await opt.count()) await opt.click()
+    }
+    await shot('20-alert-channel-form', 900)
+    await page.keyboard.press('Escape')
   }
 
   // 设备详情 → 流量曲线滚动位置

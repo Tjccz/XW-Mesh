@@ -631,7 +631,417 @@ async function run() {
     expect('删除密钥成功', status === 200)
   }
 
-  section('11. 清理与级联')
+  section('11. 告警通知')
+
+  /* 起一个本地 HTTP 接收端，用来真实验证 Webhook 投递与密钥脱敏回填 */
+  const httpMod = await import('node:http')
+  const received = []
+  const hookServer = httpMod.createServer((req, res) => {
+    let body = ''
+    req.on('data', (c) => {
+      body += c
+    })
+    req.on('end', () => {
+      received.push({ url: req.url, auth: req.headers.authorization || '', body })
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end('{"ok":true}')
+    })
+  })
+  await new Promise((r) => hookServer.listen(0, '127.0.0.1', r))
+  const hookUrl = `http://127.0.0.1:${hookServer.address().port}/xw-alert`
+
+  {
+    const { status, data } = await api('GET', '/api/alerts/meta')
+    expect('读取告警元数据', status === 200 && Array.isArray(data?.eventTypes))
+    expect('内置三类告警事件', data?.eventTypes?.length === 3, data?.eventTypes?.map((e) => e.label).join('/'))
+    expect('事件元数据带阈值范围', data?.eventTypes?.every((e) => e.defaultThreshold !== undefined && e.min !== undefined))
+    expect('渠道类型声明表单字段', data?.channelTypes?.every((c) => Array.isArray(c.fields) && c.fields.length > 0))
+    expect('邮件渠道声明密码字段', (data?.channelTypes?.find((c) => c.key === 'email')?.secrets || []).includes('pass'))
+    expect('告警级别为三档', data?.levels?.length === 3, data?.levels?.join('/'))
+  }
+
+  let alertBaseline = { rules: 0, channels: 0 }
+  {
+    const { status, data } = await api('GET', '/api/alerts/summary')
+    alertBaseline = { rules: data?.ruleTotal ?? 0, channels: data?.channelTotal ?? 0 }
+    expect('读取告警概览', status === 200)
+    expect(
+      '概览含各项计数',
+      ['firing', 'critical', 'unacked', 'resolved24h', 'total24h', 'ruleTotal', 'channelTotal'].every(
+        (k) => typeof data?.[k] === 'number'
+      )
+    )
+    expect('概览附渠道明细', Array.isArray(data?.channels))
+  }
+
+  {
+    const { status } = await api('POST', '/api/alerts/channels', {
+      name: '',
+      type: 'webhook',
+      config: { url: hookUrl },
+    })
+    expect('渠道名称为空被拒绝', status === 400)
+  }
+
+  {
+    const { status } = await api('POST', '/api/alerts/channels', { name: 'x', type: 'sms', config: {} })
+    expect('未知渠道类型被拒绝', status === 400)
+  }
+
+  {
+    const { status, data } = await api('POST', '/api/alerts/channels', {
+      name: 'x',
+      type: 'webhook',
+      config: { url: 'not-a-url' },
+    })
+    expect('非法回调地址被拒绝', status === 400)
+    expect('校验失败返回中文原因', /http/.test(data?.error || ''), data?.error)
+  }
+
+  {
+    const { status } = await api('POST', '/api/alerts/channels', {
+      name: 'x',
+      type: 'wecom',
+      config: { url: 'https://example.com/hook' },
+    })
+    expect('企业微信地址域名校验生效', status === 400)
+  }
+
+  {
+    const { status } = await api('POST', '/api/alerts/channels', {
+      name: 'x',
+      type: 'dingtalk',
+      config: { url: 'https://oapi.dingtalk.com/robot/send?access_token=t', secret: 'SEC bad space' },
+    })
+    expect('钉钉加签密钥含空格被拒绝', status === 400)
+  }
+
+  let alertChannelId = null
+  {
+    const { status, data } = await api('POST', '/api/alerts/channels', {
+      name: `冒烟Webhook-${STAMP}`,
+      type: 'webhook',
+      config: { url: hookUrl, token: 'smoke-token-xyz' },
+    })
+    alertChannelId = data?.item?.id
+    expect('创建 Webhook 渠道成功', status === 201 && !!alertChannelId, data?.item?.typeLabel)
+    expect('渠道令牌出参脱敏为掩码', data?.item?.config?.token === '******', data?.item?.config?.token)
+    expect('渠道非密字段正常返回', data?.item?.config?.url === hookUrl)
+  }
+
+  let emailChannelId = null
+  {
+    const { status, data } = await api('POST', '/api/alerts/channels', {
+      name: `冒烟邮件-${STAMP}`,
+      type: 'email',
+      config: {
+        host: '127.0.0.1',
+        port: 465,
+        secure: true,
+        user: 'alert@xw.local',
+        pass: 'super-secret-pass',
+        from: 'alert@xw.local',
+        to: 'ops@xw.local, ops2@xw.local',
+        allowSelfSigned: true,
+      },
+    })
+    emailChannelId = data?.item?.id
+    expect('创建邮件渠道成功', status === 201 && !!emailChannelId)
+    expect('SMTP 密码出参脱敏', data?.item?.config?.pass === '******', data?.item?.config?.pass)
+    expect('邮件渠道保留多收件人', (data?.item?.config?.to || '').includes(','))
+  }
+
+  {
+    const { status } = await api('POST', '/api/alerts/channels', {
+      name: 'x',
+      type: 'email',
+      config: { host: 'smtp.x.com', port: 99999, from: 'a@b.com', to: 'c@d.com' },
+    })
+    expect('SMTP 端口越界被拒绝', status === 400)
+  }
+
+  {
+    const { status, data } = await api('PATCH', '/api/alerts/channels/999999', { name: 'nope' })
+    expect('修改不存在的渠道返回 404', status === 404, data?.error)
+  }
+
+  {
+    const { status, data } = await api('PATCH', `/api/alerts/channels/${alertChannelId}`, { name: 'x', config: { url: 'garbage' } })
+    expect('修改渠道时同样校验配置', status === 400)
+  }
+
+  {
+    // 前端回传 ****** 表示「沿用旧值」，服务端必须还原而不是把掩码存库
+    const { status, data } = await api('PATCH', `/api/alerts/channels/${alertChannelId}`, {
+      name: `冒烟Webhook-改名-${STAMP}`,
+      config: { url: hookUrl, token: '******' },
+    })
+    expect('提交掩码令牌可正常保存', status === 200)
+    expect('改名生效', data?.item?.name?.includes('改名'))
+    expect('令牌仍显示为已设置', data?.item?.config?.token === '******')
+  }
+
+  {
+    const { status, data } = await api('GET', '/api/alerts/channels')
+    expect('读取渠道列表', status === 200 && Array.isArray(data?.items) && data.items.length >= 2)
+    const leaks = data.items.filter((c) => JSON.stringify(c.config || {}).includes('super-secret-pass'))
+    expect('列表接口不泄漏任何明文密码', leaks.length === 0)
+  }
+
+  {
+    const { status, data } = await api('POST', `/api/alerts/channels/${emailChannelId}/test`)
+    expect('渠道连通性测试返回结构化结果', status === 200 && typeof data?.ok === 'boolean')
+    expect('不可达的 SMTP 被标记为失败', data?.ok === false && !!data?.error, String(data?.error).slice(0, 60))
+    expect('投递失败会自动重试（有界）', data?.attempts === 2, `尝试 ${data?.attempts} 次`)
+    expect('失败结果回写到渠道状态', data?.item?.lastStatus === 'failed')
+  }
+
+  {
+    const { status, data } = await api('POST', `/api/alerts/channels/${alertChannelId}/test`)
+    expect('可达的 Webhook 测试成功', status === 200 && data?.ok === true, data?.detail)
+    expect('测试成功后渠道状态为 ok', data?.item?.lastStatus === 'ok')
+    expect('测试确实打到了本地接收端', received.length >= 1)
+  }
+
+  {
+    const { status, data } = await api('POST', '/api/alerts/rules', { name: '', eventType: 'node_offline', channelIds: [alertChannelId] })
+    expect('规则名称为空被拒绝', status === 400, data?.error)
+  }
+
+  {
+    const { status } = await api('POST', '/api/alerts/rules', { name: 'x', eventType: 'disk_full', channelIds: [alertChannelId] })
+    expect('未知事件类型被拒绝', status === 400)
+  }
+
+  {
+    const { status, data } = await api('POST', '/api/alerts/rules', {
+      name: 'x',
+      eventType: 'key_expiring',
+      threshold: 9999,
+      channelIds: [alertChannelId],
+    })
+    expect('阈值超出上限被拒绝', status === 400, data?.error)
+  }
+
+  {
+    const { status } = await api('POST', '/api/alerts/rules', { name: 'x', eventType: 'node_offline', threshold: 0, channelIds: [alertChannelId] })
+    expect('阈值低于下限被拒绝', status === 400)
+  }
+
+  {
+    const { status } = await api('POST', '/api/alerts/rules', { name: 'x', eventType: 'node_offline', channelIds: [] })
+    expect('未选通知渠道被拒绝', status === 400)
+  }
+
+  {
+    const { status } = await api('POST', '/api/alerts/rules', {
+      name: 'x',
+      eventType: 'node_offline',
+      channelIds: [alertChannelId, 999999],
+    })
+    expect('引用不存在的渠道被拒绝', status === 400)
+  }
+
+  {
+    const { status } = await api('POST', '/api/alerts/rules', {
+      name: 'x',
+      eventType: 'node_offline',
+      channelIds: [alertChannelId],
+      networkId: 999999,
+    })
+    expect('引用不存在的网络被拒绝', status === 400)
+  }
+
+  {
+    const { status } = await api('POST', '/api/alerts/rules', {
+      name: 'x',
+      eventType: 'node_offline',
+      channelIds: [alertChannelId],
+      silenceMinutes: -5,
+    })
+    expect('负静默期被拒绝', status === 400)
+  }
+
+  let alertRuleId = null
+  {
+    const { status, data } = await api('POST', '/api/alerts/rules', {
+      name: `冒烟密钥到期-${STAMP}`,
+      eventType: 'key_expiring',
+      threshold: 30,
+      level: 'warning',
+      channelIds: [alertChannelId, emailChannelId],
+      networkId,
+      silenceMinutes: 30,
+    })
+    alertRuleId = data?.item?.id
+    expect('创建告警规则成功', status === 201 && !!alertRuleId, data?.item?.eventLabel)
+    expect('规则回显渠道名称', (data?.item?.channelNames || []).length === 2, (data?.item?.channelNames || []).join('/'))
+    expect('规则回显网络名称', data?.item?.networkName === netName, data?.item?.networkName)
+    expect('规则回显阈值单位', data?.item?.unit === '天', data?.item?.unit)
+  }
+
+  {
+    const { status, data } = await api('PATCH', '/api/alerts/rules/999999', { threshold: 5 })
+    expect('修改不存在的规则返回 404', status === 404, data?.error)
+  }
+
+  {
+    const { status, data } = await api('PATCH', `/api/alerts/rules/${alertRuleId}`, { threshold: 400 })
+    expect('修改规则时校验阈值范围', status === 400, data?.error)
+  }
+
+  /* 造一个 1 天后到期的密钥，让 key_expiring 规则必然命中 */
+  let shortKeyId = null
+  {
+    const { status, data } = await api('POST', '/api/access-keys', {
+      networkId,
+      name: `短效密钥-${STAMP}`,
+      expiresInDays: 1,
+      maxNodes: 1,
+    })
+    shortKeyId = data?.item?.id
+    expect('创建 1 天后到期的密钥', status === 201 && !!shortKeyId)
+  }
+
+  let firedEventId = null
+  {
+    const before = received.length
+    const { status, data } = await api('POST', '/api/alerts/scan')
+    expect('手动触发告警扫描', status === 200 && typeof data?.fired === 'number', `触发 ${data?.fired} / 恢复 ${data?.resolved}`)
+    expect('扫描命中应触发目标', data?.fired >= 1 && data?.checked >= 1)
+
+    const delivered = received.slice(before)
+    expect('Webhook 收到告警推送', delivered.length >= 1, `${delivered.length} 条`)
+    const first = delivered[0]
+    expect('推送携带脱敏还原后的真实令牌', first?.auth === 'Bearer smoke-token-xyz', first?.auth || '（无）')
+    let payload = {}
+    try {
+      payload = JSON.parse(first?.body || '{}')
+    } catch {
+      payload = {}
+    }
+    expect('推送载荷含事件类型与级别', payload?.eventType === 'key_expiring' && !!payload?.level)
+    expect('推送载荷含工作区名', !!payload?.workspace, payload?.workspace)
+    expect('推送载荷含来源标识与规则名', payload?.source === 'xiangwang-mesh' && !!payload?.ruleName)
+    expect('推送载荷含告警正文', typeof payload?.message === 'string' && payload.message.length > 10)
+  }
+
+  {
+    const { status, data } = await api('GET', '/api/alerts/events?status=firing&limit=20')
+    expect('读取触发中的告警事件', status === 200 && Array.isArray(data?.items))
+    expect('事件列表带分页与汇总', typeof data?.total === 'number' && typeof data?.summary?.firing === 'number')
+    const mine = data.items.find((e) => e.eventType === 'key_expiring' && e.targetName?.includes('短效密钥'))
+    firedEventId = mine?.id
+    expect('事件包含刚触发的密钥到期告警', !!firedEventId, mine?.message)
+    expect('事件记录投递成功数', mine?.deliveryOk >= 1, `${mine?.deliveryOk}/${mine?.deliveryTotal}`)
+    expect('事件带中文事件名', mine?.eventLabel === '密钥即将到期', mine?.eventLabel)
+  }
+
+  {
+    const { status, data } = await api('GET', `/api/alerts/events/${firedEventId}`)
+    expect('读取告警事件详情', status === 200 && data?.item?.id === firedEventId)
+    expect('详情含逐渠道投递明细', Array.isArray(data?.item?.deliveries) && data.item.deliveries.length >= 1)
+    expect('投递明细含渠道名与结果', data?.item?.deliveries?.[0]?.channelName !== undefined && typeof data?.item?.deliveries?.[0]?.ok === 'boolean')
+  }
+
+  {
+    const { status } = await api('GET', '/api/alerts/events/999999')
+    expect('读取不存在的事件返回 404', status === 404)
+  }
+
+  {
+    const { status, data } = await api('GET', `/api/alerts/events?eventType=key_expiring&level=warning&keyword=短效密钥`)
+    expect('事件支持类型/级别/关键词筛选', status === 200 && data.items.length >= 1 && data.items.every((e) => e.eventType === 'key_expiring'))
+  }
+
+  {
+    const { status, data } = await api('POST', `/api/alerts/events/${firedEventId}/ack`)
+    expect('确认告警事件成功', status === 200 && data?.item?.acknowledged === true, data?.item?.ackBy)
+  }
+
+  {
+    const { status, data } = await api('POST', '/api/alerts/events/ack-all')
+    expect('批量确认告警成功', status === 200 && data?.ok === true && typeof data?.acked === 'number', `${data?.acked} 条`)
+  }
+
+  {
+    const { status } = await api('DELETE', `/api/access-keys/${shortKeyId}`)
+    expect('删除短效密钥以解除告警条件', status === 200)
+  }
+
+  {
+    const { status, data } = await api('POST', '/api/alerts/scan')
+    expect('再次扫描自动恢复告警', status === 200 && data?.resolved >= 1, `恢复 ${data?.resolved} 条`)
+  }
+
+  {
+    const { status, data } = await api('GET', `/api/alerts/events/${firedEventId}`)
+    expect('事件状态流转为已恢复', data?.item?.status === 'resolved', data?.item?.resolvedAt)
+  }
+
+  {
+    const { status } = await api('POST', `/api/alerts/events/${firedEventId}/ack`)
+    expect('已恢复的事件无需确认（400）', status === 400)
+  }
+
+  {
+    const saved = token
+    token = memberToken
+    const { status: s1 } = await api('GET', '/api/alerts/meta')
+    const { status: s2 } = await api('GET', '/api/alerts/events')
+    const { status: s3 } = await api('POST', '/api/alerts/channels', {
+      name: 'member-try',
+      type: 'webhook',
+      config: { url: hookUrl },
+    })
+    const { status: s4 } = await api('POST', '/api/alerts/scan')
+    const { status: s5 } = await api('PATCH', `/api/alerts/rules/${alertRuleId}`, { threshold: 3 })
+    const { status: s6 } = await api('DELETE', `/api/alerts/channels/${alertChannelId}`)
+    token = saved
+    expect('普通成员可读告警元数据', s1 === 200)
+    expect('普通成员可读告警事件', s2 === 200)
+    expect('普通成员不能建渠道（403）', s3 === 403)
+    expect('普通成员不能手动扫描（403）', s4 === 403)
+    expect('普通成员不能改规则（403）', s5 === 403)
+    expect('普通成员不能删渠道（403）', s6 === 403)
+  }
+
+  {
+    const { status } = await api('DELETE', `/api/alerts/channels/${emailChannelId}`)
+    expect('删除邮件渠道成功', status === 200)
+  }
+
+  {
+    const { status, data } = await api('DELETE', `/api/alerts/channels/${alertChannelId}`)
+    expect('删除被规则引用的渠道成功', status === 200)
+    const { data: rules } = await api('GET', '/api/alerts/rules')
+    const rule = rules.items.find((r) => r.id === alertRuleId)
+    expect('删除渠道后自动摘除规则引用', !rule?.channelIds?.includes(alertChannelId), `剩余 ${rule?.channelIds?.length ?? 0} 个渠道`)
+  }
+
+  {
+    const { status } = await api('DELETE', `/api/alerts/rules/${alertRuleId}`)
+    expect('删除告警规则成功', status === 200)
+    const { status: s2 } = await api('DELETE', `/api/alerts/rules/${alertRuleId}`)
+    expect('重复删除规则返回 404', s2 === 404)
+  }
+
+  {
+    const { status, data } = await api('GET', '/api/alerts/summary')
+    expect('告警概览随配置增删联动', status === 200 && data?.ruleTotal === alertBaseline.rules && data?.channelTotal === alertBaseline.channels, `规则 ${data?.ruleTotal} / 渠道 ${data?.channelTotal}`)
+  }
+
+  {
+    const { data } = await api('GET', '/api/audit?limit=100')
+    const actions = new Set(data.items.map((i) => i.action))
+    expect('审计记录告警配置变更', ['alert.channel.create', 'alert.rule.create'].every((a) => actions.has(a)))
+    const scanLog = data.items.find((i) => i.action === 'alert.scan')
+    expect('审计记录手动扫描动作', !!scanLog && !!scanLog.actionLabel, scanLog?.actionLabel)
+  }
+
+  hookServer.close()
+
+  section('12. 清理与级联')
 
   {
     const { status, data } = await api('DELETE', `/api/networks/${networkId}`)
