@@ -49,7 +49,21 @@
 
 ## 快速开始
 
-### 方式一：宝塔面板 + Docker（推荐生产使用）
+### 方式一：NAS / 软路由 —— Dockge 直接拉镜像（最省事，无需构建）
+
+镜像已发布在 GitHub Container Registry，宿主机上不用装 Node、不用 `docker build`：
+
+```bash
+docker pull ghcr.io/tjccz/xw-mesh-console:1.1.0
+```
+
+在 Dockge 里新建 Stack，粘 `deploy/dockge/compose.yaml` 与 `deploy/dockge/.env.example` 的内容即可。
+完整步骤（含首次需把包可见性改为 Public 这一步）见 **[deploy/dockge/README.md](deploy/dockge/README.md)**。
+
+> 首次匿名拉取若报 401，是因为 GitHub 的包默认是 private —— 去
+> 头像 → Your packages → 选中包 → Change visibility → Public，只需做一次。
+
+### 方式二：宝塔面板 + Docker（推荐生产使用）
 
 完整步骤见 **[docs/DEPLOY-BAOTA.md](docs/DEPLOY-BAOTA.md)**，含反向代理、HTTPS、备份、升级与故障排查。
 
@@ -60,7 +74,7 @@ cd xiangwang-mesh
 sh scripts/deploy.sh          # 自动生成随机密码、构建、启动、健康检查
 ```
 
-### 方式二：任意 Linux + Docker Compose
+### 方式三：任意 Linux + Docker Compose
 
 ```bash
 cp .env.example .env
@@ -70,7 +84,7 @@ docker compose up -d --build
 
 打开 `http://服务器IP:8080`。
 
-### 方式三：本地开发
+### 方式四：本地开发
 
 ```bash
 # 后端（终端 1）
@@ -179,7 +193,7 @@ curl -fsSL "https://你的控制台域名/api/agent/install.sh?key=ek_xxxxxxxx" 
 | 后端 | Node.js 22 + Express 4（ESM） |
 | 数据库 | SQLite（Node 内置 `node:sqlite`，无需额外服务，方便单机部署与备份） |
 | 节点侧 | 官方 `easytier-core` 二进制 + POSIX Shell 代理（systemd / Docker 两种托管方式） |
-| 部署 | 多阶段 Dockerfile + Docker Compose v2；NAS / 软路由侧另有 Dockge 部署包（见 `deploy/dockge/`） |
+| 部署 | 镜像已发布到 GHCR（`ghcr.io/tjccz/xw-mesh-console`），Dockge / compose 直接拉取，宿主机无需构建；另有多阶段 Dockerfile 可本地自建 |
 
 ---
 
@@ -217,6 +231,8 @@ xiangwang-mesh/
 ├── web/                            控制台前端（Vue 3 + Vite）
 │   ├── src/views/                  13 个页面
 │   └── dist/                       预构建产物（随仓库提供，部署端无需安装 Node）
+├── .github/workflows/
+│   └── docker-publish.yml          推 main 自动构建并发布镜像到 GHCR
 ├── deploy/dockge/                  NAS / 软路由 Dockge 部署
 │   ├── compose.yaml                控制台编排（宿主机端口 6088）
 │   ├── compose.full.yaml           叠加本机节点
@@ -231,6 +247,7 @@ xiangwang-mesh/
 │   ├── smoke-test.mjs              接口自检（216 项）
 │   ├── test-smtp.mjs               SMTP 客户端自测（31 项，含真实 TLS 握手）
 │   ├── check-dockerignore.py       .dockerignore 规则自检（无需 Docker）
+│   ├── check-ci.py                 CI 与部署配置一致性自检（版本号/镜像名）
 │   ├── seed-demo.mjs               幂等演示数据
 │   └── screenshots.mjs             Playwright 批量截图
 ├── docs/
@@ -265,6 +282,9 @@ node scripts/test-smtp.mjs
 
 # .dockerignore 规则自检（移植 moby/patternmatcher 语义，本机没有 Docker 也能跑）
 python scripts/check-dockerignore.py .
+
+# CI 与部署配置一致性自检（版本号、镜像名、workflow 引用路径）
+python scripts/check-ci.py
 
 # 灌入演示数据（幂等，含 7 天流量采样与告警历史）
 node --experimental-sqlite scripts/seed-demo.mjs

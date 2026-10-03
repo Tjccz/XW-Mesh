@@ -1,0 +1,152 @@
+# =====================================================================
+#  构建并发布 控制台 / 节点 镜像到 GitHub Container Registry (ghcr.io)
+#
+#  目的：让部署方不必在 NAS / 软路由上本地构建 ——
+#        Dockge 里直接填镜像名，pull 下来就能跑。
+#
+#  触发方式：
+#    · push 到 main  → 发布 <版本号> + latest + sha-<短哈希>
+#    · 推送 v* 标签   → 发布 <版本号>
+#    · Actions 页面「Run workflow」手动触发
+#
+#  ⚠️ 首次发布后必须把包的可见性改成 Public，否则匿名 pull 会 401。
+#     头像 → Your packages → 选中包 → Package settings → Change visibility
+#     或用 CLI：gh api -X PATCH /user/packages/container/xw-mesh-console \
+#                    -f visibility=public
+#
+#  镜像架构：仅 linux/amd64（飞牛 NAS、iStoreOS 软路由、宝塔服务器都是 x86_64）。
+#  若要在 ARM 设备上跑，把下面两处 platforms 改成 linux/amd64,linux/arm64，
+#  并在第一个 build-push 步骤前加 docker/setup-qemu-action@v3（会明显变慢）。
+# =====================================================================
+
+name: 构建并发布镜像
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write          # 推送镜像必需；GITHUB_TOKEN 由 Actions 自动注入，无需配 secret
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+
+      # GHCR 要求镜像路径全小写，而 GitHub 用户名是 Tjccz，必须转一次
+      - name: 计算镜像名
+        id: img
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "console=${REGISTRY}/${owner}/xw-mesh-console" >> "$GITHUB_OUTPUT"
+          echo "node=${REGISTRY}/${owner}/xw-mesh-node" >> "$GITHUB_OUTPUT"
+          echo "镜像前缀：${REGISTRY}/${owner}"
+
+      - name: 读取版本号
+        id: ver
+        run: |
+          v=$(jq -r '.version' server/package.json)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "版本号：$v"
+
+      # ── 前端 ────────────────────────────────────────────────────────
+      # 从源码重新构建一次，保证镜像里的界面一定与源码同步
+      # （仓库里虽然带着 web/dist，但可能有人改了前端忘了重新构建）
+      - name: 准备 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 构建前端
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: 检查 web/dist 是否已落后于源码
+        run: |
+          if git diff --quiet -- web/dist; then
+            echo "✔ web/dist 与源码构建结果一致"
+          else
+            echo "::warning title=web/dist 落后于源码::本次镜像已用新构建的前端，但仓库里的 web/dist 与源码不一致。建议本地执行 cd web && npm run build 后提交 web/dist。"
+            git --no-pager diff --stat -- web/dist
+          fi
+
+      # ── 构建与推送 ──────────────────────────────────────────────────
+      - name: 准备 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 生成控制台镜像标签
+        id: meta_console
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.img.outputs.console }}
+          tags: |
+            type=raw,value=${{ steps.ver.outputs.version }}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short,prefix=sha-
+
+      - name: 构建并推送控制台镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/dockge/Dockerfile.slim
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta_console.outputs.tags }}
+          labels: ${{ steps.meta_console.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 生成节点镜像标签
+        id: meta_node
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.img.outputs.node }}
+          tags: |
+            type=raw,value=${{ steps.ver.outputs.version }}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short,prefix=sha-
+
+      - name: 构建并推送节点镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.node
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta_node.outputs.tags }}
+          labels: ${{ steps.meta_node.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 汇总输出
+        run: |
+          {
+            echo "### 镜像已发布"
+            echo
+            echo '```'
+            echo "docker pull ${{ steps.img.outputs.console }}:${{ steps.ver.outputs.version }}"
+            echo "docker pull ${{ steps.img.outputs.node }}:${{ steps.ver.outputs.version }}"
+            echo '```'
+            echo
+            echo "> 首次发布请到 **Packages** 页面把包的可见性改为 **Public**，"
+            echo "> 否则匿名 \`docker pull\` 会返回 401。"
+          } >> "$GITHUB_STEP_SUMMARY"

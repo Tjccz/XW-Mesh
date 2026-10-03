@@ -4,72 +4,40 @@
 
 ---
 
-## ⚠️ 先看这两条，否则一定卡住
+## 一句话
 
-**① 镜像不在任何 registry —— `docker pull` 必然失败。**
+**镜像已经发布在 GitHub 上，宿主机不需要做任何构建。**
+Dockge 里填个镜像名，点部署就完事了。
 
-本项目从未把镜像推送到 Docker Hub 或任何 registry。正确顺序是：
-**拉源码 → 本地 `docker build` → Dockge 跑这个本地镜像**。
-
-**② 不要试图改 `.dockerignore` 来排除 `web/dist`。**
-
-`deploy/dockge/Dockerfile.slim` 靠 `COPY web/dist` 复用仓库里**已预构建好的前端**，
-正因如此 NAS 上**不需要安装 Node、不需要跑 Vite**。
-一旦 `web/dist` 被排除出构建上下文，构建会在 COPY 那一步直接失败。
+```sh
+docker pull ghcr.io/tjccz/xw-mesh-console:1.1.0
+```
 
 ---
 
-## 一、拉代码
+## 一、首次必做：把包的可见性改成 Public
 
-仓库是**公开**的，直接克隆即可：
+GitHub 的**包默认是 private**（即使仓库是公开的），所以第一次匿名拉取会报 401。
+这一步只做一次：
 
-```sh
-cd /vol1/1000/docker          # 换成你的存放位置
-git clone https://github.com/Tjccz/XW-Mesh.git xw-mesh
-cd xw-mesh
-```
+1. 确认 Actions 已经跑过 —— 打开
+   `https://github.com/Tjccz/XW-Mesh/actions`，
+   看到「构建并发布镜像」是绿色对勾。
+   **若还没跑过**：点进去 → 右侧 **Run workflow** → 选 `main` → 运行，等 2~4 分钟。
+2. 打开 `https://github.com/users/Tjccz/packages/container/xw-mesh-console/settings`
+3. 拉到底部 **Danger Zone** → **Change visibility** → 选 **Public** → 按提示输入包名确认
+4. 节点镜像同样处理：
+   `https://github.com/users/Tjccz/packages/container/xw-mesh-node/settings`
 
-> `web/dist` **已在仓库里**（约 1.8 MB），所以克隆完就能直接构建，不需要 Node。
->
-> 没有 git 或不想装 git？也可以用发行包
-> `xiangwang-mesh-dockge-1.1.0.tar.gz`，解压即同上：
+> 也可以用命令行一次搞定：
 > ```sh
-> mkdir -p /vol1/1000/docker/xw-mesh
-> tar -xzf xiangwang-mesh-dockge-1.1.0.tar.gz -C /vol1/1000/docker/xw-mesh
-> cd /vol1/1000/docker/xw-mesh
+> gh api -X PATCH /user/packages/container/xw-mesh-console -f visibility=public
+> gh api -X PATCH /user/packages/container/xw-mesh-node    -f visibility=public
 > ```
 
 ---
 
-## 二、构建镜像
-
-```sh
-docker build -f deploy/dockge/Dockerfile.slim -t xiangwang-mesh-console:1.1.0 .
-```
-
-几十秒即可完成（镜像内只装 `express` + `cors` 两个纯 JS 包）。
-
-> **关于两个 Dockerfile 的选择**
->
-> | 文件 | 特点 |
-> | --- | --- |
-> | `deploy/dockge/Dockerfile.slim`（推荐） | 复用仓库里的 `web/dist`，构建快、几乎不吃内存 |
-> | 根目录 `Dockerfile` | 会在镜像内跑 `npm ci` + `vite build`，需拉约 200MB 前端依赖、峰值内存数百 MB。x86 NAS 跑得动，但没必要 |
->
-> 因为**镜像内跑 vite build 有 OOM 风险**，软路由那种小内存机器只能用 slim 版。
-
-以后要做「这台机器自己也加入组网」，再构建节点镜像：
-
-```sh
-docker build -f docker/Dockerfile.node -t xiangwang-mesh-node:1.1.0 .
-```
-
-> **拉不到基础镜像（`node:22-alpine` / `debian:12-slim`）？**
-> 大陆网络访问 Docker Hub 经常超时。在 Docker 配置里加一个镜像加速地址再重试。
-
----
-
-## 三、在 Dockge 里建 Stack
+## 二、在 Dockge 里建 Stack
 
 1. 打开 Dockge → **+ 新建 Stack**，名字填 `xiangwang-mesh`
 2. 把 `deploy/dockge/compose.yaml` 的内容**整份粘进去**
@@ -90,7 +58,7 @@ docker build -f docker/Dockerfile.node -t xiangwang-mesh-node:1.1.0 .
 
 ---
 
-## 四、让这台机器自己也加入组网（第二步）
+## 三、让这台机器自己也加入组网（第二步）
 
 1. 登录控制台 → **网络管理** → 新建网络
    - 如果这台机器上本来就跑着别的 EasyTier，网段**避开它已占用的网段**
@@ -110,26 +78,83 @@ docker build -f docker/Dockerfile.node -t xiangwang-mesh-node:1.1.0 .
 
 ---
 
-## 五、常见问题
+## 四、升级
 
-| 现象 | 原因与处理 |
-| --- | --- |
-| `docker pull` 报 `not found` | 正常现象。镜像没发布到 registry，必须按上文本地构建 |
-| `docker build` 报 `web/dist ... not found in build context or excluded by .dockerignore` | `.dockerignore` 把 `web/dist` 排除了。删掉其中任何匹配 `dist` 的规则（详见本文件开篇第 ② 条） |
-| 容器起不来，提示 `ADMIN_PASSWORD` 未设置 | 这是故意的。`.env` 里必须填密码，避免弱口令上线 |
-| 6088 被占用 | 改 `.env` 里的 `HOST_PORT`（如 16088）后重新部署 |
-| `docker build` 拉基础镜像超时 | Docker Hub 在大陆不稳定，配镜像加速地址 |
-| 节点容器反复重启，日志报 TUN 错误 | 宿主机缺 `/dev/net/tun`，装 `kmod-tun` 后重启 |
-| 控制台能开但节点回连失败 | 检查 `CONSOLE_URL` 是否被显式设成了**设备访问不到**的地址；不确定就留空 |
-| 忘记管理员密码 | 优先在库内改密；删 `data/` 重建会**丢数据** |
-| 界面是旧版本 | 前端改了但 `web/dist` 没重新构建提交。执行 `cd web && npm run build` 后重新 `docker build` |
+改了代码并推到 `main` 之后，Actions 会自动重新构建并推送。
+宿主机上只需重新拉取：
+
+```sh
+docker compose pull && docker compose up -d
+```
+
+在 Dockge 里则是对着 Stack 点 **Pull** 再 **Update**。
+
+> `data/` 目录（数据库）不会被碰，升级不会丢数据。
+>
+> 想**始终跟随最新**而不是固定版本，把 `.env` 里的
+> `CONSOLE_IMAGE` 标签由 `1.1.0` 换成 `latest`。
 
 ---
 
-## 六、运维命令
+## 五、可选：不用 registry 的两条退路
+
+### A. 自己本地构建
+
+镜像就是个普通的 Node 应用，构建很快（只装 `express` + `cors` 两个纯 JS 包）：
 
 ```sh
-cd /vol1/1000/docker/xw-mesh        # 或你放代码的目录
+git clone https://github.com/Tjccz/XW-Mesh.git xw-mesh
+cd xw-mesh
+docker build -f deploy/dockge/Dockerfile.slim -t xiangwang-mesh-console:1.1.0 .
+```
+
+然后把 `.env` 里改成 `CONSOLE_IMAGE=xiangwang-mesh-console:1.1.0`。
+
+> 仓库里**已经带着 `web/dist`**，所以这一步不需要装 Node、不需要跑 Vite。
+>
+> 路径可以不用 `git clone`，发行包 `xiangwang-mesh-dockge-1.1.0.tar.gz`
+> 解压后内容一样（且 `.env` 已预填好）。
+
+### B. 用发行包（不装 git 也行）
+
+`xiangwang-mesh-dockge-1.1.0.tar.gz` 里内容与仓库一致，且 `.env` 已预填好：
+
+```sh
+mkdir -p /vol1/1000/docker/xw-mesh
+tar -xzf xiangwang-mesh-dockge-1.1.0.tar.gz -C /vol1/1000/docker/xw-mesh
+cd /vol1/1000/docker/xw-mesh
+docker build -f deploy/dockge/Dockerfile.slim -t xiangwang-mesh-console:1.1.0 .
+```
+
+---
+
+## 六、常见问题
+
+| 现象 | 原因与处理 |
+| --- | --- |
+| `docker pull` 报 `401 Unauthorized` / `denied` | 包的可见性还是 Private，按第一节改成 Public |
+| `docker pull` 报 `not found` | 包还没发布成功，去 Actions 页面看构建是否失败 |
+| 拉取超时 / `i/o timeout` | `ghcr.io` 在大陆网络不稳，见下方说明 |
+| `docker build` 报 `web/dist ... excluded by .dockerignore` | `.dockerignore` 被改坏了：不能有任何匹配 `dist` 的规则。跑 `python scripts/check-dockerignore.py .` 自检 |
+| 容器起不来，提示 `ADMIN_PASSWORD` 未设置 | 这是故意的。`.env` 里必须填密码，避免弱口令上线 |
+| 6088 被占用 | 改 `.env` 里的 `HOST_PORT`（如 16088）后重新部署 |
+| 节点容器反复重启，日志报 TUN 错误 | 宿主机缺 `/dev/net/tun`，装 `kmod-tun` 后重启 |
+| 控制台能开但节点回连失败 | 检查 `CONSOLE_URL` 是否被显式设成了**设备访问不到**的地址；不确定就留空 |
+| 忘记管理员密码 | 优先在库内改密；删 `data/` 重建会**丢数据** |
+| 界面是旧版本 | Actions 里前端是从源码重建的；若你本地改了前端，记得重新 `npm run build` 并提交 `web/dist` |
+
+> **拉不动 `ghcr.io` 怎么办？**
+> 两个办法：① 在 Docker 配置里给 `ghcr.io` 配加速地址；
+> ② 走第五节的退路 A，本地构建。
+> 还不行的话告诉我，我给 Actions 加上「把镜像导出成 tar.gz 挂到 Release」的方案，
+> 你下载后 `docker load` 即可。
+
+---
+
+## 七、运维命令
+
+```sh
+cd /vol1/1000/docker/xw-mesh        # 或你放 compose 的目录
 docker logs -f xiangwang-console     # 看日志
 docker compose restart console       # 重启控制台
 docker compose down                  # 停止（data/ 保留）

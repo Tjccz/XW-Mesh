@@ -6,18 +6,20 @@
 #
 #  与 compose.yaml 的差别：多了一个 node 服务，把本机作为组网节点接入。
 #
-#  额外前置：节点镜像也要构建
-#      docker build -f docker/Dockerfile.node -t xiangwang-mesh-node:1.1.0 .
+#  两个镜像都已发布到 GHCR，**宿主机上不需要做任何构建**：
+#      docker pull ghcr.io/tjccz/xw-mesh-console:1.1.0
+#      docker pull ghcr.io/tjccz/xw-mesh-node:1.1.0
 #
 #  已在 .env 中设置 ACCESS_KEY（控制台「设备接入密钥」里新建后复制）
 #
-#  注意：NAS 上启用本机节点需要 /dev/net/tun。大部分 x86 NAS 自带，
+#  注意：启用本机节点需要 /dev/net/tun。大部分 x86 NAS 自带，
 #        若报错请确认宿主机存在该设备（群晖/飞牛通常都有）。
 # =====================================================================
 
 services:
   console:
-    image: xiangwang-mesh-console:${XW_VERSION:-1.1.0}
+    # 官方发布的镜像；可用 .env 里的 CONSOLE_IMAGE 覆盖为本地构建的镜像
+    image: ${CONSOLE_IMAGE:-ghcr.io/tjccz/xw-mesh-console:1.1.0}
     container_name: xiangwang-console
     restart: unless-stopped
     ports:
@@ -50,9 +52,10 @@ services:
         max-file: "3"
 
   # --------------------------- 本机作为节点 ---------------------------
-  # 容器内是独立的 Debian 用户空间，不受路由器 OpenWrt / opkg 的限制
+  # 容器内是独立的 Debian 用户空间，不受宿主机（如 OpenWrt 的 opkg）包管理器限制
   node:
-    image: xiangwang-mesh-node:${XW_VERSION:-1.1.0}
+    # 官方发布的镜像；可用 .env 里的 NODE_IMAGE 覆盖为本地构建的镜像
+    image: ${NODE_IMAGE:-ghcr.io/tjccz/xw-mesh-node:1.1.0}
     container_name: xiangwang-node
     restart: unless-stopped
     depends_on:
@@ -72,7 +75,7 @@ services:
       - NET_ADMIN
       - NET_RAW
     devices:
-      # 必需：容器内要创建 TUN 网卡。若报错请先在路由器上装 kmod-tun
+      # 必需：容器内要创建 TUN 网卡。若报错请先在宿主机确认存在该设备
       - /dev/net/tun:/dev/net/tun
     sysctls:
       # 子网代理场景需要

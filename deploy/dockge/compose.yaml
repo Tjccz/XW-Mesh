@@ -3,16 +3,22 @@
 #
 #  适用：飞牛 NAS / iStoreOS 软路由 / 群晖 / 宝塔面板等已装 Docker 的环境
 #
-#  【重要】镜像尚未发布到任何 registry，`docker pull` 取不到。
-#          必须先用源码本地构建（预构建前端，很快）：
-#      docker build -f deploy/dockge/Dockerfile.slim -t xiangwang-mesh-console:1.1.0 .
+#  镜像已发布到 GitHub Container Registry，**宿主机上不需要做任何构建**，
+#  直接 pull 即可运行：
+#      docker pull ghcr.io/tjccz/xw-mesh-console:1.1.0
+#
+#  （若拉取报 401 / not found，多半是包的可见性还是 Private，
+#    去 GitHub 头像 → Your packages → 选中该包 → Change visibility → Public）
+#
+#  想改用自己本地构建的镜像，在 .env 里设 CONSOLE_IMAGE 覆盖即可。
 #
 #  变量请在同级 .env 中设置（Dockge 有 .env 编辑入口），见 .env.example
 # =====================================================================
 
 services:
   console:
-    image: xiangwang-mesh-console:${XW_VERSION:-1.1.0}
+    # 官方发布的镜像；可用 .env 里的 CONSOLE_IMAGE 覆盖为本地构建的镜像
+    image: ${CONSOLE_IMAGE:-ghcr.io/tjccz/xw-mesh-console:1.1.0}
     container_name: xiangwang-console
     restart: unless-stopped
     ports:
