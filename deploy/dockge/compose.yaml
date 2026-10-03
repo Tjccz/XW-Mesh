@@ -16,8 +16,9 @@ services:
     container_name: xiangwang-console
     restart: unless-stopped
     ports:
-      # 左侧为宿主机端口；若被占用改成 18080 等其他空闲端口
-      - "${HOST_PORT:-8080}:8080"
+      # 左侧为宿主机端口，右侧是容器内端口（不要改右侧）。
+      # 默认 6088 —— 刻意避开 NAS/软路由上常被占用的 8080。
+      - "${HOST_PORT:-6088}:8080"
     environment:
       PORT: 8080
       DATA_DIR: /data

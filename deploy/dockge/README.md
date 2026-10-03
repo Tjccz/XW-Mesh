@@ -4,72 +4,61 @@
 
 ---
 
-## ⚠️ 先看这条：镜像不在任何仓库里
+## ⚠️ 先看这两条，否则一定卡住
 
-**本项目没有把镜像发布到 Docker Hub 或任何 registry，所以 `docker pull` 一定失败。**
+**① 镜像不在任何 registry —— `docker pull` 必然失败。**
 
-你必须用源码在本地构建一次。好在控制台镜像很小、构建很快：
+本项目从未把镜像推送到 Docker Hub 或任何 registry。正确顺序是：
+**拉源码 → 本地 `docker build` → Dockge 跑这个本地镜像**。
 
-```sh
-docker build -f deploy/dockge/Dockerfile.slim -t xiangwang-mesh-console:1.1.0 .
-```
+**② 不要试图改 `.dockerignore` 来排除 `web/dist`。**
 
-构建完镜像就在本机了，之后 Dockge 只负责「跑这个镜像」，不再需要构建。
+`deploy/dockge/Dockerfile.slim` 靠 `COPY web/dist` 复用仓库里**已预构建好的前端**，
+正因如此 NAS 上**不需要安装 Node、不需要跑 Vite**。
+一旦 `web/dist` 被排除出构建上下文，构建会在 COPY 那一步直接失败。
 
 ---
 
-## 一、把代码放到宿主机上
+## 一、拉代码
 
-### 方式 A：用发行包（推荐）
-
-发行包 `xiangwang-mesh-dockge-1.1.0.tar.gz` **已内置构建好的 `web/dist`**，
-宿主机上不需要装 Node、不需要跑 Vite，也不需要联网拉前端依赖。
+仓库是**公开**的，直接克隆即可：
 
 ```sh
-# 在宿主机上解压（路径按你的习惯改）
-mkdir -p /vol1/1000/docker/xw-mesh
-tar -xzf xiangwang-mesh-dockge-1.1.0.tar.gz -C /vol1/1000/docker/xw-mesh
-cd /vol1/1000/docker/xw-mesh
+cd /vol1/1000/docker          # 换成你的存放位置
+git clone https://github.com/Tjccz/XW-Mesh.git xw-mesh
+cd xw-mesh
 ```
 
-怎么把包传上去，看你方便：
-
-| 方式 | 做法 |
-| --- | --- |
-| SSH / SCP | `scp xiangwang-mesh-dockge-1.1.0.tar.gz 用户名@NAS地址:/tmp/` |
-| SMB / 文件共享 | 直接拖进 NAS 的共享目录，再 SSH 解压 |
-| Dockge 文件管理 | 传进 Stack 目录后用 Dockge 内置终端解压 |
-
-### 方式 B：从仓库拉（仓库是私有的，需要凭据）
-
-```sh
-git clone git@github.com:Tjccz/XW-Mesh.git xw-mesh && cd xw-mesh
-# 仓库里没有 web/dist（被 .gitignore 排除），需本地构建一次
-cd web && npm ci && npm run build && cd ..
-```
+> `web/dist` **已在仓库里**（约 1.8 MB），所以克隆完就能直接构建，不需要 Node。
+>
+> 没有 git 或不想装 git？也可以用发行包
+> `xiangwang-mesh-dockge-1.1.0.tar.gz`，解压即同上：
+> ```sh
+> mkdir -p /vol1/1000/docker/xw-mesh
+> tar -xzf xiangwang-mesh-dockge-1.1.0.tar.gz -C /vol1/1000/docker/xw-mesh
+> cd /vol1/1000/docker/xw-mesh
+> ```
 
 ---
 
 ## 二、构建镜像
 
 ```sh
-cd /vol1/1000/docker/xw-mesh
-
-# 控制台（预构建前端，只装 express + cors，几十秒完成）
 docker build -f deploy/dockge/Dockerfile.slim -t xiangwang-mesh-console:1.1.0 .
 ```
+
+几十秒即可完成（镜像内只装 `express` + `cors` 两个纯 JS 包）。
 
 > **关于两个 Dockerfile 的选择**
 >
 > | 文件 | 特点 |
 > | --- | --- |
-> | `deploy/dockge/Dockerfile.slim`（推荐） | 复用预构建 `web/dist`，镜像内只装两个纯 JS 包，构建快、几乎不吃内存 |
-> | 根目录 `Dockerfile` | 会在镜像内跑 `npm ci` + `vite build`，要拉约 200MB 前端依赖、峰值内存数百 MB。x86 NAS 跑得动，但没必要 |
+> | `deploy/dockge/Dockerfile.slim`（推荐） | 复用仓库里的 `web/dist`，构建快、几乎不吃内存 |
+> | 根目录 `Dockerfile` | 会在镜像内跑 `npm ci` + `vite build`，需拉约 200MB 前端依赖、峰值内存数百 MB。x86 NAS 跑得动，但没必要 |
 >
-> 因为**镜像内跑 vite build 有 OOM 风险**，软路由那种小机器只能用 slim 版；
-> NAS 上两个都能用，但 slim 依然更快。
+> 因为**镜像内跑 vite build 有 OOM 风险**，软路由那种小内存机器只能用 slim 版。
 
-以后要做「本机也加入组网」，再构建节点镜像：
+以后要做「这台机器自己也加入组网」，再构建节点镜像：
 
 ```sh
 docker build -f docker/Dockerfile.node -t xiangwang-mesh-node:1.1.0 .
@@ -88,7 +77,11 @@ docker build -f docker/Dockerfile.node -t xiangwang-mesh-node:1.1.0 .
    **务必改掉 `ADMIN_PASSWORD`**
 4. 点 **部署**
 
-容器起来后访问 `http://宿主机IP:8080`。
+容器起来后访问 **`http://宿主机IP:6088`**。
+
+> **端口说明**：宿主机端口默认 **6088**，刻意避开 NAS / 软路由上常被占用的 8080。
+> 容器内始终监听 8080，**不需要也不要改右侧**。若 6088 也被占用，
+> 改 `.env` 里的 `HOST_PORT` 即可。
 
 > **`CONSOLE_URL` 建议留空。**
 > 留空时程序会自动回退成「浏览器当前访问的地址」，所以换机器、换 IP、换端口都不用改配置，
@@ -122,19 +115,21 @@ docker build -f docker/Dockerfile.node -t xiangwang-mesh-node:1.1.0 .
 | 现象 | 原因与处理 |
 | --- | --- |
 | `docker pull` 报 `not found` | 正常现象。镜像没发布到 registry，必须按上文本地构建 |
+| `docker build` 报 `web/dist ... not found in build context or excluded by .dockerignore` | `.dockerignore` 把 `web/dist` 排除了。删掉其中任何匹配 `dist` 的规则（详见本文件开篇第 ② 条） |
 | 容器起不来，提示 `ADMIN_PASSWORD` 未设置 | 这是故意的。`.env` 里必须填密码，避免弱口令上线 |
-| 8080 被占用 | 改 `.env` 里的 `HOST_PORT`（如 18080）后重新部署 |
+| 6088 被占用 | 改 `.env` 里的 `HOST_PORT`（如 16088）后重新部署 |
 | `docker build` 拉基础镜像超时 | Docker Hub 在大陆不稳定，配镜像加速地址 |
 | 节点容器反复重启，日志报 TUN 错误 | 宿主机缺 `/dev/net/tun`，装 `kmod-tun` 后重启 |
 | 控制台能开但节点回连失败 | 检查 `CONSOLE_URL` 是否被显式设成了**设备访问不到**的地址；不确定就留空 |
 | 忘记管理员密码 | 优先在库内改密；删 `data/` 重建会**丢数据** |
+| 界面是旧版本 | 前端改了但 `web/dist` 没重新构建提交。执行 `cd web && npm run build` 后重新 `docker build` |
 
 ---
 
 ## 六、运维命令
 
 ```sh
-cd /vol1/1000/docker/xw-mesh        # 或你放 compose 的目录
+cd /vol1/1000/docker/xw-mesh        # 或你放代码的目录
 docker logs -f xiangwang-console     # 看日志
 docker compose restart console       # 重启控制台
 docker compose down                  # 停止（data/ 保留）
